@@ -1,7 +1,7 @@
 """Posture loop: camera -> MediaPipe pose -> slouch judge -> speak + events.
 
   On the Pi:       python3 run.py
-  Laptop webcam:   python3 run.py --source 0 --show
+  Laptop webcam:   python3 run.py --source 0 --show   (q quits, c recalibrates)
   Pi + tuning view on the laptop (run ../camera/view.sh there first):
                    python3 run.py --preview <laptop-ip>:5000
 
@@ -21,7 +21,7 @@ import subprocess
 import sys
 import time
 
-from judge import PostureJudge, pick_side, threshold_deg
+from judge import PostureJudge, pick_side
 
 # Same defaults as the schema / fake duck until the relay pushes real settings.
 DEFAULT_SETTINGS = {
@@ -108,18 +108,26 @@ class Overlay:
                 cv2.line(img, (int(hip.x), int(hip.y)), (int(sh.x), int(sh.y)), (255, 128, 0), 3)
             else:                 # no hip: measured against vertical
                 cv2.line(img, (int(sh.x), int(sh.y)), (int(sh.x), int(sh.y) - 120), (255, 255, 255), 1)
-        limit = threshold_deg(judge.settings.get("posture_severity", 50))
         angle = "--" if judge.angle is None else f"{judge.angle:.0f}"
-        state = "no pose" if judge.angle is None else ("SLOUCH" if judge.slouch_since is not None else "upright")
-        color = (0, 0, 255) if state == "SLOUCH" else (0, 200, 0)
+        if judge.angle is None:
+            state, text = "no pose", "no pose"
+        elif judge.calibrating or judge.limit is None:
+            state, text = "calibrating", f"bend {angle}  CALIBRATING - sit up tall"
+        else:
+            state = "SLOUCH" if judge.slouch_since is not None else "upright"
+            base = judge.baseline[judge.using_hip]
+            text = f"bend {angle} / limit {judge.limit:.0f} (yours {base:.0f})  {state}"
+        color = {"SLOUCH": (0, 0, 255), "calibrating": (0, 200, 255)}.get(state, (0, 200, 0))
         mode = "vs torso" if judge.using_hip else "vs vertical (no hip)"
-        cv2.putText(img, f"bend {angle} / limit {limit:.0f}  {state}", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+        cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
         cv2.putText(img, mode, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         if self.show:
             cv2.imshow("duck posture", img)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
                 raise KeyboardInterrupt
+            if key == ord("c"):
+                judge.recalibrate()
         if self.sock:
             ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 60])
             data = jpg.tobytes()

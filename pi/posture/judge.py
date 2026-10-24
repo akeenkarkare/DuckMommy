@@ -4,12 +4,18 @@ Library-agnostic and dependency-free. Whatever pose library runs on the Pi
 just has to hand us ear/shoulder (side view) points in image coordinates
 (x right, y DOWN), plus a visibility/confidence score per point.
 
+Calibrated per person: when someone first appears the duck asks them to sit
+up tall, records their upright bend for CALIBRATE_S, and only counts a slouch
+when they bend `margin` degrees past that baseline. Fixed angles failed in
+testing (one person's upright read 29-37 deg).
+
 Contract matches backend/sim/fake-duck.js and the dashboard:
   * slouch must persist `posture_delay_s` before the first prompt
   * while still slouching, remind every REMIND_EVERY_S
   * when a *prompted* slouch ends, emit an `upright` event
   * slouches fixed before the delay never produce an event
   * posture_severity: 0 = only very bad slouches count, 100 = any lean counts
+    (maps to how far past the baseline counts: 25 / 15 / 5 deg at 0 / 50 / 100)
 Event value: {state: "slouch"|"upright", neck_angle_deg, slouch_duration_s}
 """
 
@@ -25,14 +31,19 @@ MIN_VISIBILITY = 0.5         # ignore landmarks the pose model isn't sure about
 MIN_HIP_VISIBILITY = 0.5     # below this, assume the desk hides the hip and use vertical instead
 EMA_ALPHA = 0.3              # smoothing per frame (higher = snappier, noisier)
 
-# severity 0 -> 55 deg, 50 -> 40 deg, 100 -> 25 deg (side-view neck inclination)
-LENIENT_DEG = 55.0
-STRICT_DEG = 25.0
+CALIBRATE_S = 3.0            # how long to record someone's upright posture
+AWAY_RECALIBRATE_S = 10.0    # gone this long -> treat the next person as new
+CALIBRATE_MESSAGE = "Sit up tall for me!"
+
+# degrees past your own upright baseline that count as a slouch
+# severity 0 -> 25, 50 -> 15, 100 -> 5
+LENIENT_MARGIN = 25.0
+STRICT_MARGIN = 5.0
 
 
-def threshold_deg(severity: float) -> float:
+def margin_deg(severity: float) -> float:
     s = min(100.0, max(0.0, float(severity)))
-    return LENIENT_DEG - (LENIENT_DEG - STRICT_DEG) * s / 100.0
+    return LENIENT_MARGIN - (LENIENT_MARGIN - STRICT_MARGIN) * s / 100.0
 
 
 @dataclass
@@ -96,6 +107,28 @@ class PostureJudge:
         self.slouch_since: float | None = None
         self.prompted = False
         self.last_prompt = 0.0
+        # calibration: separate baselines for torso mode (True) and vertical mode (False)
+        self.baseline: dict[bool, float] = {}
+        self.calib_start: float | None = None
+        self.calib_samples: list[float] = []
+        self.greeted = False                  # asked this person to sit up tall yet?
+
+    @property
+    def calibrating(self) -> bool:
+        return self.calib_start is not None
+
+    @property
+    def limit(self) -> float | None:
+        """Current slouch threshold in degrees, or None until calibrated."""
+        base = self.baseline.get(self.using_hip)
+        if base is None:
+            return None
+        return base + margin_deg(self.settings.get("posture_severity", 50))
+
+    def recalibrate(self) -> None:
+        """Forget baselines; the next frames re-record upright posture (and re-ask)."""
+        self.baseline.clear()
+        self.calib_start, self.calib_samples, self.greeted = None, [], False
 
     # -- public -----------------------------------------------------------
     def update(self, now: float, landmarks: dict[str, Point] | None) -> list[tuple]:
@@ -104,11 +137,15 @@ class PostureJudge:
             return self._no_pose(now)
 
         raw = neck_angle_deg(*side)
+        mode_changed = self.angle is not None and self.using_hip != (side[2] is not None)
         self.using_hip = side[2] is not None
-        self.angle = raw if self.angle is None else EMA_ALPHA * raw + (1 - EMA_ALPHA) * self.angle
+        self.angle = raw if (self.angle is None or mode_changed) else EMA_ALPHA * raw + (1 - EMA_ALPHA) * self.angle
         self.last_seen = now
 
-        limit = threshold_deg(self.settings.get("posture_severity", 50))
+        if self.using_hip not in self.baseline:
+            return self._calibrate(now, raw)
+
+        limit = self.limit
         slouching_now = self.angle >= (limit if self.slouch_since is None else limit - HYSTERESIS_DEG)
 
         if slouching_now:
@@ -116,10 +153,26 @@ class PostureJudge:
         return self._end_slouch(now)
 
     def reset(self) -> list[tuple]:
-        """Person left / camera turned off."""
-        return self._end_slouch(self.last_seen or 0.0, clear_angle=True)
+        """Person left / camera turned off. The next person gets calibrated."""
+        actions = self._end_slouch(self.last_seen or 0.0, clear_angle=True)
+        self.recalibrate()
+        return actions
 
     # -- internals --------------------------------------------------------
+    def _calibrate(self, now: float, raw: float) -> list[tuple]:
+        actions = self._end_slouch(now)   # mode switch mid-slouch: close it out
+        if self.calib_start is None:
+            self.calib_start, self.calib_samples = now, []
+            if not self.greeted:          # ask once per person, not on every mode switch
+                self.greeted = True
+                actions.append(("speak", CALIBRATE_MESSAGE))
+        self.calib_samples.append(raw)
+        if now - self.calib_start >= CALIBRATE_S:
+            ordered = sorted(self.calib_samples)
+            self.baseline[self.using_hip] = ordered[len(ordered) // 2]   # median
+            self.calib_start, self.calib_samples = None, []
+        return actions
+
     def _slouching(self, now: float) -> list[tuple]:
         if self.slouch_since is None:
             self.slouch_since = now
@@ -147,7 +200,13 @@ class PostureJudge:
         return actions
 
     def _no_pose(self, now: float) -> list[tuple]:
-        if self.last_seen is not None and now - self.last_seen >= LOST_TRACKING_S:
+        if self.last_seen is None:
+            return []
+        away = now - self.last_seen
+        if away >= AWAY_RECALIBRATE_S and (self.baseline or self.greeted):
+            self.recalibrate()
+        if away >= LOST_TRACKING_S:
+            self.calib_start, self.calib_samples = None, []   # restart an interrupted calibration
             return self._end_slouch(self.last_seen, clear_angle=True)
         return []
 

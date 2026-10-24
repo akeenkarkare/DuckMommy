@@ -20,7 +20,7 @@ pip install mediapipe                          # Linux ARM64 wheel exists (1.1.1
 |---|---|
 | Pi | `python3 run.py` |
 | Pi, with the annotated view on your laptop | laptop: `../camera/view.sh`, then Pi: `python3 run.py --preview <laptop-ip>:5000` |
-| Laptop webcam, no Pi | `python3 run.py --source 0 --show` (press q to quit) |
+| Laptop webcam, no Pi | `python3 run.py --source 0 --show` (q quits, c recalibrates) |
 
 Only one process can use the Pi camera, so stop `camera/stream.sh` first.
 Tuning flags: `--severity 0..100` (default 50), `--delay <s>` (default 5).
@@ -30,15 +30,20 @@ uplink client. The speak line goes to `espeak-ng`/`espeak` (Pi) or `say` (Mac)
 if installed, and is printed otherwise.
 
 ## How it judges a slouch (side view)
+- **Calibrates to each person.** When someone sits down, the duck says
+  "Sit up tall for me!" and records their upright bend for 3 s (median).
+  A slouch is bending past *their own* baseline, so tall/short people and
+  different camera angles all work. Gone for 10 s → the next person is
+  recalibrated. Restart `run.py` (or press `c` in the `--show` window) to
+  redo it.
 - **Bend** = angle at the shoulder between the hip→shoulder (torso) line and
-  the shoulder→ear line, from whichever side the camera sees better. Leaning
-  forward with a straight back keeps it near 0°; a jutting head or rounded
-  back raises it. The overlay draws the torso line in blue.
+  the shoulder→ear line. Leaning forward with a straight back keeps it near
+  0°; a jutting head or rounded back raises it. Torso line drawn in blue.
 - **No hip visible** (desk in the way): falls back to shoulder→ear vs.
   vertical, which *can't* tell a straight lean from a slouch. The overlay
   says `vs vertical (no hip)`. Frame the camera so the hip is in view.
-- **Threshold** from `posture_severity`: 0 → 55°, 50 → 40°, 100 → 25°.
-  Starting guesses; tune with the `--preview` view on real people.
+- **How far past the baseline counts**, from `posture_severity`:
+  0 → +25°, 50 → +15°, 100 → +5°.
 - Smoothed per frame, with 5° hysteresis so it doesn't flicker at the line.
 - Prompt after `posture_delay_s` of continuous slouch, remind every 30 s,
   `upright` event when a prompted slouch ends. Lost tracking for 2 s ends it.
