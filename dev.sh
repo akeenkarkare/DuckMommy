@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start the website: the relay + the dashboard together. Ctrl+C stops both.
-#   ./dev.sh              relay (ws://localhost:8080) + dashboard (http://localhost:3000)
+#   ./dev.sh              relay (ws://localhost:RELAY_PORT, default 8080) + dashboard (http://localhost:3000)
 #   ./dev.sh --fake-duck  same, plus the simulated duck (no Pi needed)
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -17,9 +17,18 @@ major="$(node -p 'process.versions.node.split(".")[0]')"
 [[ -f backend/.env ]] || die "Missing backend/.env. Copy backend/.env.example and fill in SUPABASE_URL, SUPABASE_SECRET_KEY and DUCK_TOKEN (ask whoever set up Supabase)."
 [[ -f dashboard/.env.local || -f dashboard/.env ]] || die "Missing dashboard/.env.local. Copy dashboard/.env.example and fill in the Supabase URL, publishable key and NEXT_PUBLIC_RELAY_URL=ws://localhost:8080."
 
-for port in 8080 3000; do
+RELAY_PORT="$(sed -nE 's/^RELAY_PORT=([0-9]+).*/\1/p' backend/.env | tail -1 || true)"; RELAY_PORT="${RELAY_PORT:-8080}"
+for f in dashboard/.env.local dashboard/.env; do
+  [[ -f "$f" ]] || continue
+  url="$(sed -nE 's/^NEXT_PUBLIC_RELAY_URL=(.*)/\1/p' "$f" | tail -1)"
+  if [[ -n "$url" && "$url" != *":$RELAY_PORT"* ]]; then
+    die "$f has NEXT_PUBLIC_RELAY_URL=$url but the relay runs on port $RELAY_PORT (backend/.env). Make them match."
+  fi
+done
+for port in "$RELAY_PORT" 3000; do
   if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-    die "Port $port is already in use (an old relay/dashboard still running?). Stop it, or: kill \$(lsof -t -iTCP:$port -sTCP:LISTEN)"
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN | tail -n +2 >&2
+    die "Port $port is already in use (above). If it's an old relay/dashboard (node): kill \$(lsof -t -iTCP:$port -sTCP:LISTEN). Otherwise pick another RELAY_PORT in backend/.env (and the matching NEXT_PUBLIC_RELAY_URL)."
   fi
 done
 
@@ -37,6 +46,6 @@ if (( FAKE_DUCK )); then
 fi
 
 sleep 4
-printf '\n\033[32mOpen http://localhost:3000\033[0m  (Ctrl+C here stops everything)\n'
+printf '\n\033[32mOpen http://localhost:3000\033[0m  (relay on ws://localhost:%s · Ctrl+C here stops everything)\n' "$RELAY_PORT"
 printf 'First time on this Supabase project? Run backend/supabase/migrations/003_coach_and_calendar.sql once in its SQL editor.\n\n'
 wait
