@@ -3,7 +3,7 @@
 A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watches your posture with OpenCV, tells you out loud to sit up, guards your desk in sentry mode, quacks when you pat its head, and uses an NFC tag to trigger iOS focus/app-blocking. Every metric goes to a server, and a dashboard shows each logged-in user only their own data.
 
 ## Golden rules for Claude
-1. **Hardcode before AI.** Use OpenCV or simple logic wherever it works. Do not add LLM or vision-API calls unless a task explicitly asks for one. The one requested exception: **ElevenLabs** for the duck's voice, proxied by the relay (`POST /tts`) so the key stays on the laptop. Local models (MediaPipe pose/hands, YAMNet) are fine.
+1. **Hardcode before AI.** Use OpenCV or simple logic wherever it works. Do not add LLM or vision-API calls unless a task explicitly asks for one. The one requested exception: **ElevenLabs** for the duck's voice, proxied by the relay (`POST /tts`) so the key stays on the laptop. Local models (MediaPipe pose/holistic, YAMNet) are fine.
 2. **Per-user isolation is non-negotiable.** Every DB query filters by the `user_id` from the authenticated session. Never take it from the request body or query params.
 3. **Never commit secrets.** API keys and DB URIs live in `.env` only. `.env` is gitignored, and `.env.example` lists the variable names.
 4. **Ask before adding a dependency.** This is especially important on the Pi, because installs there are slow and can break the camera stack.
@@ -30,7 +30,7 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 4. **NFC focus tag.** Tapping the tag opens iOS Shortcuts, where the user picks what to block (like a Brick device). Goal: judges should NOT have to build a Shortcut by hand.
 5. **Sentry mode.** The ultrasonic sensor detects motion, then the camera confirms a person with OpenCV (works in night vision) and logs a `sentry` event.
 6. **Voice.** ElevenLabs in the duck's own voice; the dashboard sets what it says.
-7. **Sign to Duck.** The user signs ASL handshapes at the camera and the duck speaks them (MediaPipe hands, no API) and logs a `sign` event.
+7. **Sign to Duck.** The user signs ASL word signs at the camera; the duck speaks the phrase (MediaPipe Holistic + DTW templates, no API) and logs a `sign` event. Code: `pi/asl`.
 8. **Sound alerts.** The mic hears a doorbell, phone, alarm, notification or someone calling, flashes the LED in a pattern per sound, and logs a `sound` event.
 
 **Out of scope until 1–5 work:**
@@ -67,6 +67,7 @@ Each folder may get its own short CLAUDE.md with run/test commands. Keep this ro
 
 ## Commands (TODO: fill in as they exist)
 - Pi: `cd pi && python3 duck.py` (setup in `pi/README.md`; `cd backend && npm run duck` simulates it)
+- Sign to Duck data + training: see `pi/asl/README.md` (`duck.py` loads the model).
 - Sentry: `cd pi/sentry && python3 run.py --trig <BCM> --echo <BCM>` (or `--no-ultrasonic`). Night vision is automatic. See `pi/sentry/README.md`.
 - Camera preview (dev only): laptop `pi/camera/view.sh`, then Pi `pi/camera/stream.sh <laptop-ip>`. See `pi/camera/README.md`.
 - Backend: `cd backend && npm run dev`

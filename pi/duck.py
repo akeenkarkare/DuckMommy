@@ -8,7 +8,7 @@ What runs when:
                 microphone -> doorbell/phone/alarm/... -> LED pattern + `sound` event
                 relay link: settings in (dashboard), commands in (say / quack), events out
   at the desk   camera on: posture (`posture` events, sit-up prompts)
-                           Sign to Duck (ASL handshapes -> spoken text + `sign` event)
+                           Sign to Duck (ASL word signs -> phrase + commands, spoken + `sign` event)
   away          camera off unless sentry is on: ultrasonic (or camera) motion ->
                 person check -> `sentry` event + sentry message
   arrive/leave  from the ultrasonic distance (or the camera, if no ultrasonic) -> `presence` event
@@ -22,13 +22,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import threading
 import time
 from pathlib import Path
 
 PI = Path(__file__).resolve().parent
 sys.path.insert(0, str(PI))
 sys.path.insert(0, str(PI / "posture"))   # pose.py and judge.py import each other by bare name
+sys.path.insert(1, str(PI / "asl"))       # word signs: same bare-name imports
 
 from judge import PostureJudge                              # noqa: E402
 from sentry.watch import SentryWatch, UltrasonicMotion      # noqa: E402
@@ -37,7 +37,6 @@ from shared.presence import Presence                        # noqa: E402
 from shared.sources import open_source                      # noqa: E402
 from shared.uplink import Uplink                            # noqa: E402
 from shared.voice import Voice                              # noqa: E402
-from sign.signs import SignClassifier, SignReader           # noqa: E402
 from sounds.alerts import SoundAlerts                       # noqa: E402
 from sounds.led import AlertLED                             # noqa: E402
 
@@ -47,7 +46,6 @@ DEFAULT_SETTINGS = {
     "presence_message": "Welcome back!", "posture_severity": 50, "posture_delay_s": 5,
     "sentry_enabled": False, "quack_enabled": True, "sign_enabled": True, "sound_alerts_enabled": True,
 }
-DESK_FPS_SIGN_EVERY = 2   # run the hand model on every 2nd frame at the desk
 IDLE_CAMERA_FPS = 3       # camera-only presence/sentry while away
 ULTRASONIC_HZ = 10
 
@@ -116,7 +114,14 @@ class Duck:
                 self.voice.say(a[1])
             elif a[0] == "led":
                 self.led.show(a[1])
+            elif a[0] == "command":
+                self.on_sign_command(a[1])
             # ("camera", ...) from the sentry is ignored: the main loop decides when the camera runs
+
+    def on_sign_command(self, name: str):
+        # From pi/asl/phrases.json (start_focus, break, help, ...). The duck has no focus
+        # timer yet, so they're logged; the `sign` event carries them to the dashboard too.
+        log(f"sign command: {name}")
 
     # ── pressure sensor (gpiozero callback thread) ──────────────────────────
     def on_press(self):
@@ -142,25 +147,27 @@ class Duck:
             from sounds.listener import SoundListener
             SoundListener(self.on_sound, self.mic_device).start()
 
-        from pose import PoseDetector
         from sentry.vision import MOTION_FRACTION, Motion, person_confidence
-        pose = PoseDetector(args.pose_model)
-        hands = None
-        if not args.no_sign:
-            if Path(args.hand_model).exists():
-                from sign.hands import HandDetector
-                hands = HandDetector(args.hand_model)
-            else:
-                log(f"{args.hand_model} missing (run get_models.sh): Sign to Duck off")
-        classifier = SignClassifier()
-        if hands:
-            log(f"Sign to Duck: {classifier.mode}")
+        words = None
+        if not args.no_sign and Path(args.holistic_model).exists():
+            # One Holistic pass gives the body (posture, presence, sentry) and both hands.
+            from asl_engine import WordSignReader
+            from asl_model import make_engine
+            from holistic import HolisticDetector
+            engine, model_path = make_engine()
+            pose = HolisticDetector(args.holistic_model)
+            words = WordSignReader(engine, self.settings)
+            log(f"Sign to Duck: model {model_path or 'missing (get sign data + train in pi/asl)'}")
+        else:
+            if not args.no_sign:
+                log(f"{args.holistic_model} missing (run get_models.sh): Sign to Duck off")
+            from pose import PoseDetector
+            pose = PoseDetector(args.pose_model)
 
         cam = open_source(args.source, light=args.light, noir=args.noir)
-        judge, watch, reader = PostureJudge(self.settings), SentryWatch(self.settings), SignReader(self.settings)
+        judge, watch = PostureJudge(self.settings), SentryWatch(self.settings)
         presence, umotion = Presence(), UltrasonicMotion()
         cmotion = Motion() if self.wake == "camera" else None
-        frame_i = 0
 
         def on_presence(ev, distance):
             nonlocal umotion
@@ -170,7 +177,8 @@ class Duck:
                     self.voice.say(self.settings["presence_message"])
             else:
                 self.act(judge.reset())
-                self.act(reader.finish())
+                if words:
+                    self.act(words.finish())
                 self.emit("presence", {"present": False, "distance_cm": None if distance is None else round(distance)})
                 umotion = UltrasonicMotion()   # learn the empty room fresh
             log(ev)
@@ -195,21 +203,19 @@ class Duck:
                 rgb = cam.read() if need_cam else None
 
                 if rgb is not None:
-                    points, _ = pose.detect(rgb, now)
+                    points, body = pose.detect(rgb, now)   # body: Holistic frame (None with the pose model)
                     if not self.sonar:
                         ev = presence.update_seen(now, points is not None)
                         if ev:
                             on_presence(ev, None)
                     if presence.present:
                         self.act(judge.update(now, points))
-                        if hands and frame_i % DESK_FPS_SIGN_EVERY == 0:
-                            pts, side = hands.detect(rgb, now)
-                            self.act(reader.update(now, classifier.classify(pts, side), pts is not None))
+                        if words:   # every frame: word signs are fast movements
+                            self.act(words.update(now, body))
                     elif watch.looking:
                         self.act(watch.frame(now, person_confidence(points), cam.night))
                     elif sentry_on and cmotion and cmotion.fraction(rgb) >= MOTION_FRACTION:
                         self.act(watch.trigger(now, None, "camera"))
-                    frame_i += 1
                 self.act(watch.tick(now))
 
                 if presence.present or watch.looking:
@@ -224,8 +230,6 @@ class Duck:
         finally:
             cam.close()
             pose.close()
-            if hands:
-                hands.close()
             for dev in (self.sonar, self.button, self.led):
                 if dev:
                     dev.close()
@@ -242,7 +246,7 @@ def main():
     ap.add_argument("--no-mic", action="store_true", help="turn off sound alerts")
     ap.add_argument("--no-sign", action="store_true", help="turn off Sign to Duck")
     ap.add_argument("--pose-model", default=str(PI / "posture" / "pose_landmarker_lite.task"))
-    ap.add_argument("--hand-model", default=str(PI / "models" / "hand_landmarker.task"))
+    ap.add_argument("--holistic-model", default=str(PI / "models" / "holistic_landmarker.task"))
     args = ap.parse_args()
     Duck(args, load_env()).run()
 
