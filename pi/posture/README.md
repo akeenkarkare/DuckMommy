@@ -43,8 +43,8 @@ if installed, and is printed otherwise.
   vertical, which *can't* tell a straight lean from a slouch. The overlay
   says `vs vertical (no hip)`. Frame the camera so the hip is in view.
 - **How far past the baseline counts**, from `posture_severity`:
-  0 → +25°, 50 → +15°, 100 → +5°.
-- Smoothed per frame, with 5° hysteresis so it doesn't flicker at the line.
+  0 → +9°, 50 → +5°, 100 → +1°. Clears 3° below the limit.
+- Smoothed per frame, with 3° hysteresis so it doesn't flicker at the line.
 - Prompt after `posture_delay_s` of continuous slouch, remind every 30 s,
   `upright` event when a prompted slouch ends. Lost tracking for 2 s ends it.
 

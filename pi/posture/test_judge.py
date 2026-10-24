@@ -73,10 +73,10 @@ class Geometry(unittest.TestCase):
         self.assertAlmostEqual(neck_angle_deg(b["left_ear"], b["left_shoulder"], b["left_hip"]), 35, places=5)
 
     def test_margin_mapping(self):
-        self.assertEqual(margin_deg(0), 25)
-        self.assertEqual(margin_deg(50), 15)
-        self.assertEqual(margin_deg(100), 5)
-        self.assertEqual(margin_deg(500), 5)
+        self.assertEqual(margin_deg(0), 9)
+        self.assertEqual(margin_deg(50), 5)
+        self.assertEqual(margin_deg(100), 1)
+        self.assertEqual(margin_deg(500), 1)
 
 
 class Calibration(unittest.TestCase):
@@ -89,7 +89,7 @@ class Calibration(unittest.TestCase):
     def test_baseline_is_your_upright_reading(self):
         j, _ = calibrated()
         self.assertAlmostEqual(j.baseline[False], UPRIGHT, places=5)
-        self.assertAlmostEqual(j.limit, UPRIGHT + 15, places=5)
+        self.assertAlmostEqual(j.limit, UPRIGHT + 5, places=5)
 
     def test_akeens_natural_posture_is_not_a_slouch(self):
         j, t = calibrated()
@@ -98,7 +98,7 @@ class Calibration(unittest.TestCase):
 
     def test_different_people_get_different_baselines(self):
         j, _ = calibrated(pose(10))
-        self.assertAlmostEqual(j.limit, 25, places=5)
+        self.assertAlmostEqual(j.limit, 15, places=5)
 
     def test_new_person_after_long_absence_recalibrates(self):
         j, t = calibrated()
@@ -126,6 +126,28 @@ class Calibration(unittest.TestCase):
         self.assertIn(True, j.baseline)
 
 
+class AkeensNumbers(unittest.TestCase):
+    """Baseline ~43 deg in real testing; slouch should count around 48."""
+
+    def test_slouch_at_48_counts(self):
+        j, t = calibrated(pose(43))
+        self.assertAlmostEqual(j.limit, 48, places=5)
+        _, acts = run(j, t, 8, pose(49))
+        self.assertEqual([e["state"] for e in events(acts)], ["slouch"])
+
+    def test_wobble_around_baseline_is_fine(self):
+        j, t = calibrated(pose(43))
+        for a in (41, 45, 44, 42, 46, 43) * 5:
+            t, acts = run(j, t, 1, pose(a))
+            self.assertEqual(acts, [])
+
+    def test_sitting_back_up_clears(self):
+        j, t = calibrated(pose(43))
+        t, _ = run(j, t, 8, pose(52))
+        _, acts = run(j, t, 3, pose(43))
+        self.assertEqual([e["state"] for e in events(acts)], ["upright"])
+
+
 class Timing(unittest.TestCase):
     def test_short_slouch_is_silent(self):
         j, t = calibrated()
@@ -151,9 +173,9 @@ class Timing(unittest.TestCase):
         self.assertGreaterEqual(evs[0]["slouch_duration_s"], 8)
 
     def test_hysteresis_ignores_jitter_near_threshold(self):
-        j, t = calibrated()                               # limit 48, clears below 43
-        t, _ = run(j, t, 8, pose(55))
-        _, acts = run(j, t, 5, pose(45))
+        j, t = calibrated()                               # limit 38, clears below 35
+        t, _ = run(j, t, 8, pose(45))
+        _, acts = run(j, t, 5, pose(36))
         self.assertEqual([e for e in events(acts) if e["state"] == "upright"], [])
 
     def test_lost_tracking_ends_slouch(self):
@@ -173,8 +195,8 @@ class Timing(unittest.TestCase):
 
     def test_settings_are_live(self):
         j, t = calibrated()
-        j.settings["posture_severity"] = 0                # margin 25 -> limit 58: 55 no longer counts
-        _, acts = run(j, t, 10, pose(55))
+        j.settings["posture_severity"] = 0                # margin 9 -> limit 42: 41 no longer counts
+        _, acts = run(j, t, 10, pose(41))
         self.assertEqual(acts, [])
 
     def test_leaning_forward_straight_is_not_a_slouch(self):

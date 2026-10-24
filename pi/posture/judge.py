@@ -15,7 +15,7 @@ Contract matches backend/sim/fake-duck.js and the dashboard:
   * when a *prompted* slouch ends, emit an `upright` event
   * slouches fixed before the delay never produce an event
   * posture_severity: 0 = only very bad slouches count, 100 = any lean counts
-    (maps to how far past the baseline counts: 25 / 15 / 5 deg at 0 / 50 / 100)
+    (maps to how far past the baseline counts: 9 / 5 / 1 deg at 0 / 50 / 100)
 Event value: {state: "slouch"|"upright", neck_angle_deg, slouch_duration_s}
 """
 
@@ -25,7 +25,7 @@ import math
 from dataclasses import dataclass
 
 REMIND_EVERY_S = 30          # same as the fake duck
-HYSTERESIS_DEG = 5.0         # must drop this far below threshold to count as fixed
+HYSTERESIS_DEG = 3.0         # must drop this far below the limit to count as fixed
 LOST_TRACKING_S = 2.0        # no usable pose this long -> slouch is over
 MIN_VISIBILITY = 0.5         # ignore landmarks the pose model isn't sure about
 MIN_HIP_VISIBILITY = 0.5     # below this, assume the desk hides the hip and use vertical instead
@@ -36,9 +36,9 @@ AWAY_RECALIBRATE_S = 10.0    # gone this long -> treat the next person as new
 CALIBRATE_MESSAGE = "Sit up tall for me!"
 
 # degrees past your own upright baseline that count as a slouch
-# severity 0 -> 25, 50 -> 15, 100 -> 5
-LENIENT_MARGIN = 25.0
-STRICT_MARGIN = 5.0
+# severity 0 -> 9, 50 -> 5, 100 -> 1
+LENIENT_MARGIN = 9.0
+STRICT_MARGIN = 1.0
 
 
 def margin_deg(severity: float) -> float:
