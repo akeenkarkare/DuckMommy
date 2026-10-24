@@ -2,6 +2,7 @@
 
   python3 duck.py                      everything, using pins/devices from pi/.env
   python3 duck.py --source 0           laptop webcam instead of the Pi camera (dev)
+  python3 duck.py --preview            + live annotated view at http://<pi-ip>:8090 (dev)
 
 What runs when:
   always        pressure sensor -> quack + `pat` event
@@ -48,6 +49,7 @@ DEFAULT_SETTINGS = {
 }
 IDLE_CAMERA_FPS = 3       # camera-only presence/sentry while away
 ULTRASONIC_HZ = 10
+STATUS_EVERY_S = 5        # one-line heartbeat so you can see it working
 
 
 def log(msg: str):
@@ -138,6 +140,28 @@ class Duck:
     def on_sound(self, now: float, categories):
         self.act(self.alerts.update(now, categories, muted=self.voice.busy()))
 
+    # ── dev preview overlay ─────────────────────────────────────────────────
+    @staticmethod
+    def _overlay(presence, points, judge, watch, words, cam):
+        green, red, white, amber = (0, 200, 0), (0, 0, 255), (255, 255, 255), (0, 190, 255)
+        lines = [(f"{'AT DESK' if presence.present else 'AWAY'}   person: {'yes' if points else 'no'}",
+                  green if points else white)]
+        if presence.present:
+            if judge.angle is None:
+                lines.append(("posture: no pose", white))
+            elif judge.limit is None:
+                lines.append((f"posture: calibrating (bend {judge.angle:.0f}) - sit up tall", amber))
+            else:
+                slouch = judge.slouch_since is not None
+                lines.append((f"posture: bend {judge.angle:.0f} / limit {judge.limit:.0f}  {'SLOUCH' if slouch else 'ok'}",
+                              red if slouch else green))
+            lines.append((f"sign to duck: {'on' if words else 'off'}", white))
+        else:
+            lines.append((f"sentry: {watch.state}", red if watch.looking else white))
+        lux = "--" if cam.lux is None else f"{cam.lux:.0f}"
+        lines.append((f"{'NIGHT' if cam.night else 'DAY'}  lux {lux}", white))
+        return lines
+
     # ── main loop (camera + ultrasonic) ─────────────────────────────────────
     def run(self):
         args = self.args
@@ -168,6 +192,11 @@ class Duck:
         judge, watch = PostureJudge(self.settings), SentryWatch(self.settings)
         presence, umotion = Presence(), UltrasonicMotion()
         cmotion = Motion() if self.wake == "camera" else None
+        preview = None
+        if args.preview:
+            from shared.preview import PreviewServer
+            preview = PreviewServer(args.preview_port)
+        stat = {"t": time.monotonic(), "frames": 0, "pose": 0}
 
         def on_presence(ev, distance):
             nonlocal umotion
@@ -204,6 +233,8 @@ class Duck:
 
                 if rgb is not None:
                     points, body = pose.detect(rgb, now)   # body: Holistic frame (None with the pose model)
+                    stat["frames"] += 1
+                    stat["pose"] += points is not None
                     if not self.sonar:
                         ev = presence.update_seen(now, points is not None)
                         if ev:
@@ -216,7 +247,18 @@ class Duck:
                         self.act(watch.frame(now, person_confidence(points), cam.night))
                     elif sentry_on and cmotion and cmotion.fraction(rgb) >= MOTION_FRACTION:
                         self.act(watch.trigger(now, None, "camera"))
+                    if preview:
+                        preview.push(rgb, self._overlay(presence, points, judge, watch, words, cam))
                 self.act(watch.tick(now))
+
+                if now - stat["t"] >= STATUS_EVERY_S:
+                    secs = now - stat["t"]
+                    lux = "--" if cam.lux is None else f"{cam.lux:.0f}"
+                    log(f"status: {'AT DESK' if presence.present else 'away'} · person in {stat['pose']}/{stat['frames']} frames "
+                        f"· {stat['frames'] / secs:.1f} fps · camera {'on' if need_cam else 'off'} "
+                        f"· {'night' if cam.night else 'day'} (lux {lux})"
+                        + (f" · distance {distance:.0f} cm" if distance is not None else ""))
+                    stat.update(t=now, frames=0, pose=0)
 
                 if presence.present or watch.looking:
                     period = 1.0 / args.fps
@@ -245,6 +287,8 @@ def main():
     ap.add_argument("--fps", type=float, default=10, help="frames analysed per second at the desk")
     ap.add_argument("--no-mic", action="store_true", help="turn off sound alerts")
     ap.add_argument("--no-sign", action="store_true", help="turn off Sign to Duck")
+    ap.add_argument("--preview", action="store_true", help="live annotated view at http://<pi-ip>:8090 (dev only)")
+    ap.add_argument("--preview-port", type=int, default=8090)
     ap.add_argument("--pose-model", default=str(PI / "posture" / "pose_landmarker_lite.task"))
     ap.add_argument("--holistic-model", default=str(PI / "models" / "holistic_landmarker.task"))
     args = ap.parse_args()

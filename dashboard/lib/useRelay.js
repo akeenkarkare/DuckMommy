@@ -8,12 +8,15 @@ const BUFFER_MS = 5 * 60 * 1000;
 const MAX_LOG = 300;
 
 // Live connection to the relay. Re-authenticates with a fresh session on every reconnect.
-export function useRelay(enabled) {
+// onEvent(event) fires for live events only (not the replayed buffer), e.g. to animate the duck.
+export function useRelay(enabled, onEvent) {
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState({ duck_connected: false, with_you: false });
   const [events, setEvents] = useState([]);
   const [lastAck, setLastAck] = useState(null);
   const wsRef = useRef(null);
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
 
   useEffect(() => {
     if (!enabled) return;
@@ -33,7 +36,10 @@ export function useRelay(enabled) {
         const msg = JSON.parse(e.data);
         if (msg.type === 'auth_ok') { setConnected(true); backoff = 1000; }
         else if (msg.type === 'buffer') setEvents(msg.events);
-        else if (msg.type === 'event') setEvents((prev) => [...prev, msg.event].slice(-MAX_LOG));
+        else if (msg.type === 'event') {
+          setEvents((prev) => [...prev, msg.event].slice(-MAX_LOG));
+          onEventRef.current?.(msg.event);
+        }
         else if (msg.type === 'status') setStatus(msg);
         else if (msg.type === 'command_ack') setLastAck({ ...msg, at: Date.now() });
       };

@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useRelay } from '@/lib/useRelay';
-import SlouchChart from '@/components/SlouchChart';
-import SettingsPanel from '@/components/SettingsPanel';
-import EventLog from '@/components/EventLog';
-import SignCard from '@/components/SignCard';
+import { useSettings } from '@/lib/useSettings';
+import { useDuck } from '@/components/duck/DuckContext';
+import { HOTSPOTS, ACTIVITY } from '@/components/duck/hotspots';
+import { PANELS } from '@/components/Panels';
 
 function useNow(ms) {
   const [now, setNow] = useState(() => Date.now());
@@ -21,18 +21,31 @@ function useNow(ms) {
 function DuckStatus({ connected, status }) {
   let tone = 'critical', text = 'Relay offline';
   if (connected && !status.duck_connected) { tone = 'warning'; text = 'Duck offline'; }
-  else if (connected && !status.with_you) { tone = 'warning'; text = 'Duck is with someone else. Reload to take it back.'; }
+  else if (connected && !status.with_you) { tone = 'warning'; text = 'Duck is with someone else · reload to take it back'; }
   else if (connected) { tone = 'good'; text = 'Duck is with you'; }
-  return <span className="pill" role="status"><span className={`dot ${tone}`} aria-hidden />{text}</span>;
+  return <span className="pill glass" role="status" title={text}><span className={`dot ${tone}`} aria-hidden /><span className="pill-text">{text}</span></span>;
 }
 
 export default function Dashboard() {
   const router = useRouter();
+  const duck = useDuck();
+  const { focus, setFocus, setBadges, bridge } = duck;
   const [user, setUser] = useState(null);
   const [name, setName] = useState('');
-  const { connected, status, events, lastAck, send, bufferMs } = useRelay(!!user);
+  const [touched, setTouched] = useState(false);
   const now = useNow(5000);
-  const [sayText, setSayText] = useState('');
+
+  const s = useSettings(user?.id, () => send({ type: 'settings_changed' }));
+
+  // Live events animate the 3D duck (with the user's own messages in its speech bubble).
+  const onEvent = useCallback((e) => {
+    const st = s.settings ?? {};
+    const message = e.type === 'posture' ? st.posture_message : e.type === 'sentry' ? st.sentry_message : e.type === 'presence' ? st.presence_message : undefined;
+    bridge.current.react({ ...e, message });
+  }, [bridge, s.settings]);
+
+  const { connected, status, events, lastAck, send, bufferMs } = useRelay(!!user, onEvent);
+  const canCommand = connected && status.duck_connected && status.with_you;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -51,72 +64,84 @@ export default function Dashboard() {
       .then(({ data }) => setName(data?.display_name || user.email));
   }, [user]);
 
-  if (!user) return null;
+  // Clicking the duck's head quacks the real duck.
+  useEffect(() => {
+    bridge.current.onPet = () => canCommand && send({ type: 'command', command: { type: 'quack' } });
+  }, [bridge, canCommand, send]);
 
   const recent = events.filter((e) => e.ts >= now - bufferMs);
-  const slouches = recent.filter((e) => e.type === 'posture' && e.value?.state === 'slouch').length;
-  const pats = recent.filter((e) => e.type === 'pat').length;
-  const lastPosture = [...events].reverse().find((e) => e.type === 'posture');
-  const lastPresence = [...events].reverse().find((e) => e.type === 'presence');
-  const canCommand = connected && status.duck_connected && status.with_you;
+
+  // Live text under each label on the duck.
+  useEffect(() => {
+    const last = (type) => [...recent].reverse().find((e) => e.type === type);
+    const count = (type) => recent.filter((e) => e.type === type).length;
+    const posture = last('posture');
+    const sound = last('sound');
+    setBadges({
+      camera: posture ? (posture.value?.state === 'slouch' ? 'Slouching 👀' : 'Upright ✓') : 'Posture · Sentry · Signs',
+      petting: `${count('pat')} pats · 5 min`,
+      voice: s.settings ? `Volume ${s.settings.volume}` : 'What it says',
+      microphone: sound ? `Heard: ${sound.value?.label ?? sound.value?.kind}` : 'Listening',
+      focus: `${count('focus')} focus taps`,
+    });
+  }, [events, now, s.settings, setBadges]);
+
+  useEffect(() => {
+    if (focus) setTouched(true);
+  }, [focus]);
+
+  if (!user) return null;
+
+  const panel = focus && PANELS[focus];
+  const Body = panel?.Body;
+  const dockItems = [...HOTSPOTS, ACTIVITY];
 
   return (
-    <main className="page">
-      <header className="header">
-        <div>
-          <h1>🦆 Duck Daddy</h1>
-          <div className="who">Hi, {name}</div>
+    <>
+      <header className="topbar">
+        <div className="brand">
+          <span style={{ fontSize: 26 }} aria-hidden>🦆</span>
+          <div>
+            <h1>Duck Daddy</h1>
+            <div className="who">Hi, {name}</div>
+          </div>
         </div>
         <div className="row">
           <DuckStatus connected={connected} status={status} />
-          <button className="btn" onClick={() => supabase.auth.signOut()}>Log out</button>
+          <button className="btn glass" onClick={() => supabase.auth.signOut()}>Log out</button>
         </div>
       </header>
 
-      <section className="tiles" style={{ marginBottom: 16 }}>
-        <div className="tile"><div className="label">Slouch prompts · 5 min</div><div className="value">{slouches}</div></div>
-        <div className="tile"><div className="label">Head pats · 5 min</div><div className="value">{pats}</div></div>
-        <div className="tile">
-          <div className="label">Posture now</div>
-          <div className="value">{!lastPosture ? '—' : lastPosture.value?.state === 'slouch' ? 'Slouching' : 'Upright'}</div>
-        </div>
-        <div className="tile">
-          <div className="label">At desk</div>
-          <div className="value">{!lastPresence ? '—' : lastPresence.value?.present ? 'Yes' : 'Away'}</div>
-        </div>
-      </section>
+      <p className="hint-float" style={{ opacity: touched || focus ? 0 : 1 }}>
+        Drag to spin · tilt up for a top view · click a label to dive in · tap its head to quack
+      </p>
 
-      <div className="grid">
-        <div className="stack">
-          <div className="card">
-            <h2>Slouch prompts <span className="sub">per 30 seconds · last 5 minutes</span></h2>
-            <SlouchChart events={events} now={now} windowMs={bufferMs} />
-          </div>
-          <EventLog events={recent} />
-        </div>
+      <nav className={`dock glass ${panel ? 'shifted' : ''}`} aria-label="Duck parts">
+        {dockItems.map((h) => (
+          <button key={h.id} aria-pressed={focus === h.id} onClick={() => setFocus(focus === h.id ? null : h.id)}>
+            <span className="t">{h.title}</span>
+          </button>
+        ))}
+      </nav>
 
-        <div className="stack">
-          <SignCard events={recent} />
-          <div className="card">
-            <h2>Talk to the duck</h2>
-            <form className="row" onSubmit={(e) => {
-              e.preventDefault();
-              if (!sayText.trim()) return;
-              send({ type: 'command', command: { type: 'say', text: sayText } });
-              setSayText('');
-            }}>
-              <input type="text" maxLength={200} placeholder="Say something…" value={sayText}
-                onChange={(e) => setSayText(e.target.value)}
-                style={{ flex: 1, minWidth: 0, padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg)' }} />
-              <button className="btn primary" type="submit" disabled={!canCommand}>Say</button>
-              <button className="btn" type="button" disabled={!canCommand}
-                onClick={() => send({ type: 'command', command: { type: 'quack' } })}>Quack</button>
-            </form>
-            {lastAck && !lastAck.ok && now - lastAck.at < 10000 && <p className="error">The duck didn't get that.</p>}
-          </div>
-          <SettingsPanel userId={user.id} onSaved={() => send({ type: 'settings_changed' })} />
-        </div>
-      </div>
-    </main>
+      <aside className={`panel glass ${panel ? 'open' : ''}`} aria-hidden={!panel}>
+        {panel && (
+          <>
+            <div className="panel-head">
+              <div>
+                <div className="kicker">{panel.kicker}</div>
+                <h2>{panel.title}</h2>
+              </div>
+              <button className="btn icon" aria-label="Close" onClick={() => setFocus(null)}>✕</button>
+            </div>
+            <div className="panel-body" key={focus}>
+              <Body events={recent} now={now} windowMs={bufferMs} s={s} send={send} canCommand={canCommand}
+                duck={bridge.current} lastAck={lastAck} />
+              {s.state && <p className="hint">{s.state}</p>}
+            </div>
+          </>
+        )}
+      </aside>
+    </>
   );
 }

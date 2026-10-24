@@ -71,6 +71,7 @@ class Voice:
         self._queue: queue.Queue[str] = queue.Queue(maxsize=5)
         self._busy_until = 0.0
         self._lock = threading.Lock()
+        self._tts_down = False   # log the outage once, not on every line
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         threading.Thread(target=self._worker, daemon=True, name="voice").start()
 
@@ -122,8 +123,14 @@ class Voice:
             with urllib.request.urlopen(req, timeout=10) as r:
                 pcm = r.read()
         except Exception as e:   # offline, relay down, ElevenLabs not configured: fall back
-            log(f"tts unavailable ({e}); using fallback")
+            if not self._tts_down:
+                self._tts_down = True
+                hint = " (ElevenLabs keys not set in backend/.env?)" if "503" in str(e) else ""
+                log(f"ElevenLabs unavailable: {e}{hint}. Using espeak until it's back")
             return None
+        if self._tts_down:
+            self._tts_down = False
+            log("ElevenLabs is back")
         path.write_bytes(pcm)
         return pcm
 

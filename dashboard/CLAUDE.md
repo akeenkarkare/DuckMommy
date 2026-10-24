@@ -21,6 +21,14 @@ Web frontend. Each logged-in user sees and controls only their own duck. Root ru
    - **Test controls:** e.g. a "say it now" button, sent through the relay to the duck
 4. Not in scope: the live camera feed (video stays on the Pi).
 
+## Design: the 3D duck
+- `components/duck/DuckStage.js` is one three.js scene mounted in `app/layout.js`, so it never unmounts. `/login` and `/register` show the **hero** close-up; `/` shows the **dashboard** duck with labels. Changing route eases between the two, with a spin.
+- The duck is built from primitives in `components/duck/buildDuck.js`; there's no model file. The hardware hotspots (camera eye, touch ring, beak, mic grille, NFC tag) are listed in `components/duck/hotspots.js`.
+- `components/duck/DuckContext.js`: `focus` (which part is zoomed; opens that part's panel in `components/Panels.js`), `badges` (live text under the labels), and `bridge.react(event)`, which animates the duck for live events (pat → squish, slouch → head shake, sign → speech bubble, sound → mic ripples, sentry → red lens).
+- Interaction: drag to spin and tilt (up to a top view); click a part or label to zoom in; click the head to make the real duck quack; Esc or a click on empty space zooms back out.
+- Theme is dark-only (the duck is the light source). Respects `prefers-reduced-motion`.
+- Dependency: `three` (no react-three-fiber).
+
 ## Schema
 See `/backend/supabase/schema.sql` (`profiles`, `settings`).
 
