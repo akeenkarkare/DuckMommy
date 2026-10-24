@@ -13,10 +13,14 @@ from __future__ import annotations
 
 import time
 
+import numpy as np
+
 MOTION_PIXELS = 1500     # tune on real hardware; larger = less sensitive
 IDLE_TIMEOUT_S = 300.0   # 5 minutes
 BLUR_KERNEL = 21         # Gaussian blur kernel (odd; larger = smoother diff)
 DIFF_THRESHOLD = 25      # per-pixel intensity delta that counts as changed
+SCENE_CHANGE_FRACTION = 0.6   # more than this much of the frame changed at once =
+                              # lights / exposure / day-night switch, not a person
 
 
 class MotionDetector:
@@ -31,6 +35,7 @@ class MotionDetector:
         self.state = "IDLE"
         self._prev_gray = None
         self._last_motion: float = 0.0
+        self.last_pixels = 0
 
     @property
     def active(self) -> bool:
@@ -47,10 +52,16 @@ class MotionDetector:
             self._prev_gray = gray
             return []
 
-        diff = cv2.absdiff(self._prev_gray, gray)
+        # Cancel a uniform brightness shift (auto-exposure, a lamp) before diffing.
+        shift = float(gray.mean()) - float(self._prev_gray.mean())
+        signed = gray.astype(np.int16) - self._prev_gray.astype(np.int16) - int(round(shift))
+        diff = np.clip(np.abs(signed), 0, 255).astype(np.uint8)
         _, mask = cv2.threshold(diff, DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
         pixels = cv2.countNonZero(mask)
         self._prev_gray = gray
+        self.last_pixels = pixels
+        if pixels > SCENE_CHANGE_FRACTION * mask.size:
+            return []   # whole scene changed (e.g. night vision kicked in): re-baseline, not motion
 
         threshold = int(self.config.get("motion_pixels", MOTION_PIXELS))
         timeout = float(self.config.get("idle_timeout_s", IDLE_TIMEOUT_S))
@@ -66,12 +77,27 @@ class MotionDetector:
 
         return []
 
-    def reset(self) -> None:
-        """Discard frame history (call when the camera restarts)."""
+    def reset(self, now: float | None = None) -> None:
+        """Discard frame history (call when the camera restarts).
+        With `now`: also start counting stillness from now (someone just sat down)."""
         self._prev_gray = None
+        if now is not None:
+            self._last_motion = now
+            self.state = "ACTIVE"
 
-    def debug_info(self) -> dict:
+    @property
+    def timeout_s(self) -> float:
+        return float(self.config.get("idle_timeout_s", IDLE_TIMEOUT_S))
+
+    def still_for(self, now: float) -> float:
+        """Seconds since the last motion (0 if there hasn't been any yet)."""
+        return now - self._last_motion if self._last_motion else 0.0
+
+    def debug_info(self, now: float | None = None) -> dict:
+        now = time.monotonic() if now is None else now
         return {
             "state": self.state,
-            "idle_for_s": round(time.monotonic() - self._last_motion, 1) if self._last_motion else None,
+            "idle_for_s": round(self.still_for(now), 1) if self._last_motion else None,
+            "timeout_s": self.timeout_s,
+            "pixels": self.last_pixels,
         }

@@ -8,7 +8,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # pip-only (not available at a usable version via apt)
-mediapipe>=0.10
+mediapipe>=1.0          # 1.x has the Tasks API + HolisticLandmarker (Sign to Duck)
 websockets>=12.0
 
 # On the Pi: numpy and opencv come from apt via --system-site-packages.

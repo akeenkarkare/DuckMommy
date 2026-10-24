@@ -4,26 +4,45 @@
 
 Frames are only encoded while someone is watching. This is a LAN debugging aid,
 like camera/stream.sh; video never goes to the relay or the server.
+
+The URL carries a random key (printed at start, new every run) so other people on
+the same venue Wi-Fi can't watch the camera. Set PREVIEW_KEY in pi/.env to keep
+one fixed key across restarts.
 """
 
 from __future__ import annotations
 
+import hmac
+import os
+import secrets
+import socket
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
+
+
+def _lan_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))   # no packets sent; just picks the outgoing interface
+            return s.getsockname()[0]
+    except OSError:
+        return "<this-pi's-ip>"
 
 
 class PreviewServer:
-    def __init__(self, port: int = 8090):
+    def __init__(self, port: int = 8090, key: str | None = None):
         import cv2
         self.cv2 = cv2
         self.jpg: bytes | None = None
         self.viewers = 0
+        self.key = key or os.environ.get("PREVIEW_KEY") or secrets.token_urlsafe(6)
         self.cond = threading.Condition()
         server = ThreadingHTTPServer(("0.0.0.0", port), self._handler())
         server.daemon_threads = True
         threading.Thread(target=server.serve_forever, daemon=True, name="preview").start()
-        print(f"# preview: open http://<this-pi's-ip>:{port} in a browser", file=sys.stderr, flush=True)
+        print(f"# preview: open http://{_lan_ip()}:{port}/?k={self.key} in a browser", file=sys.stderr, flush=True)
 
     def push(self, rgb, lines: list[tuple[str, tuple[int, int, int]]]):
         """lines: (text, BGR colour) drawn top-left."""
@@ -49,14 +68,17 @@ class PreviewServer:
                 pass
 
             def do_GET(self):
-                if self.path != "/":
+                url = urlsplit(self.path)
+                given = (parse_qs(url.query).get("k") or [""])[0]
+                if url.path != "/" or not hmac.compare_digest(given.encode(), preview.key.encode()):
                     self.send_error(404)
                     return
                 self.send_response(200)
                 self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
-                preview.viewers += 1
+                with preview.cond:
+                    preview.viewers += 1
                 try:
                     while True:
                         with preview.cond:
@@ -68,6 +90,7 @@ class PreviewServer:
                 except (BrokenPipeError, ConnectionResetError):
                     pass
                 finally:
-                    preview.viewers -= 1
+                    with preview.cond:
+                        preview.viewers -= 1
 
         return Handler

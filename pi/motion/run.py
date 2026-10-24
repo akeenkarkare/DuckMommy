@@ -35,7 +35,7 @@ class Overlay:
         color = (0, 200, 0) if state == "IDLE" else (0, 80, 255)
         label = state
         if state == "ACTIVE" and idle_for is not None:
-            remaining = max(0.0, IDLE_TIMEOUT_S - idle_for)
+            remaining = max(0.0, info["timeout_s"] - idle_for)
             label = f"ACTIVE  idle-out in {remaining:.0f}s"
         self.cv2.putText(bgr, label, (10, 30), self.cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
         self.cv2.imshow("duck motion", bgr)
