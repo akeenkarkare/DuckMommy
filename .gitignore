@@ -6,3 +6,5 @@ node_modules/
 next-env.d.ts
 __pycache__/
 *.pyc
+*.task
+.venv/
