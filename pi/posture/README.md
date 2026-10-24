@@ -30,10 +30,15 @@ uplink client. The speak line goes to `espeak-ng`/`espeak` (Pi) or `say` (Mac)
 if installed, and is printed otherwise.
 
 ## How it judges a slouch (side view)
-- **Neck angle** = shoulder→ear line vs. vertical, from whichever side the
-  camera sees better. Upright is roughly 5–15°.
+- **Bend** = angle at the shoulder between the hip→shoulder (torso) line and
+  the shoulder→ear line, from whichever side the camera sees better. Leaning
+  forward with a straight back keeps it near 0°; a jutting head or rounded
+  back raises it. The overlay draws the torso line in blue.
+- **No hip visible** (desk in the way): falls back to shoulder→ear vs.
+  vertical, which *can't* tell a straight lean from a slouch. The overlay
+  says `vs vertical (no hip)`. Frame the camera so the hip is in view.
 - **Threshold** from `posture_severity`: 0 → 45°, 50 → 30°, 100 → 15°.
-  These are starting guesses; tune with the `--preview` view on real people.
+  Starting guesses; tune with the `--preview` view on real people.
 - Smoothed per frame, with 5° hysteresis so it doesn't flicker at the line.
 - Prompt after `posture_delay_s` of continuous slouch, remind every 30 s,
   `upright` event when a prompted slouch ends. Lost tracking for 2 s ends it.

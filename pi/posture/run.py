@@ -102,15 +102,20 @@ class Overlay:
         img = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         side = pick_side(points) if points else None
         if side:
-            ear, sh = side
+            ear, sh, hip = side
             cv2.line(img, (int(sh.x), int(sh.y)), (int(ear.x), int(ear.y)), (0, 255, 255), 3)
-            cv2.line(img, (int(sh.x), int(sh.y)), (int(sh.x), int(sh.y) - 120), (255, 255, 255), 1)
+            if hip is not None:   # torso line the neck is measured against
+                cv2.line(img, (int(hip.x), int(hip.y)), (int(sh.x), int(sh.y)), (255, 128, 0), 3)
+            else:                 # no hip: measured against vertical
+                cv2.line(img, (int(sh.x), int(sh.y)), (int(sh.x), int(sh.y) - 120), (255, 255, 255), 1)
         limit = threshold_deg(judge.settings.get("posture_severity", 50))
         angle = "--" if judge.angle is None else f"{judge.angle:.0f}"
         state = "no pose" if judge.angle is None else ("SLOUCH" if judge.slouch_since is not None else "upright")
         color = (0, 0, 255) if state == "SLOUCH" else (0, 200, 0)
-        cv2.putText(img, f"neck {angle} deg / limit {limit:.0f}  {state}", (10, 30),
+        mode = "vs torso" if judge.using_hip else "vs vertical (no hip)"
+        cv2.putText(img, f"bend {angle} / limit {limit:.0f}  {state}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+        cv2.putText(img, mode, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         if self.show:
             cv2.imshow("duck posture", img)
             if cv2.waitKey(1) & 0xFF == ord("q"):

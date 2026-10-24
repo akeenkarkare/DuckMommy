@@ -22,6 +22,7 @@ REMIND_EVERY_S = 30          # same as the fake duck
 HYSTERESIS_DEG = 5.0         # must drop this far below threshold to count as fixed
 LOST_TRACKING_S = 2.0        # no usable pose this long -> slouch is over
 MIN_VISIBILITY = 0.5         # ignore landmarks the pose model isn't sure about
+MIN_HIP_VISIBILITY = 0.5     # below this, assume the desk hides the hip and use vertical instead
 EMA_ALPHA = 0.3              # smoothing per frame (higher = snappier, noisier)
 
 # severity 0 -> 45 deg, 50 -> 30 deg, 100 -> 15 deg (side-view neck inclination)
@@ -41,16 +42,31 @@ class Point:
     visibility: float = 1.0
 
 
-def neck_angle_deg(ear: Point, shoulder: Point) -> float:
-    """Angle between vertical and the shoulder->ear line. 0 = head stacked over shoulder."""
-    dx = abs(ear.x - shoulder.x)
-    dy = shoulder.y - ear.y          # image y points down; ear above shoulder -> positive
-    return math.degrees(math.atan2(dx, dy))
+def neck_angle_deg(ear: Point, shoulder: Point, hip: Point | None = None) -> float:
+    """How far the head bends forward off the torso line, in degrees.
+
+    With a hip: angle between the hip->shoulder line and the shoulder->ear line.
+    Leaning the whole body forward with a straight back keeps the three points
+    in line, so it stays near 0; a jutting head or rounded back raises it.
+    Without a hip (hidden by the desk): fall back to the shoulder->ear line vs.
+    vertical, which can't tell a straight lean from a slouch.
+    """
+    nx, ny = ear.x - shoulder.x, shoulder.y - ear.y          # image y points down
+    if hip is None:
+        tx, ty = 0.0, 1.0                                     # vertical
+    else:
+        tx, ty = shoulder.x - hip.x, hip.y - shoulder.y
+    n_len, t_len = math.hypot(nx, ny), math.hypot(tx, ty)
+    if n_len == 0 or t_len == 0:
+        return 0.0
+    cos = max(-1.0, min(1.0, (nx * tx + ny * ty) / (n_len * t_len)))
+    return math.degrees(math.acos(cos))
 
 
-def pick_side(landmarks: dict[str, Point]) -> tuple[Point, Point] | None:
+def pick_side(landmarks: dict[str, Point]) -> tuple[Point, Point, Point | None] | None:
     """Use whichever side (left/right) the camera sees better. Keys:
-    left_ear, left_shoulder, right_ear, right_shoulder (missing keys are fine)."""
+    {left,right}_{ear,shoulder,hip} (missing keys are fine).
+    Returns (ear, shoulder, hip-or-None)."""
     best, best_vis = None, MIN_VISIBILITY
     for side in ("left", "right"):
         ear, sh = landmarks.get(f"{side}_ear"), landmarks.get(f"{side}_shoulder")
@@ -58,7 +74,10 @@ def pick_side(landmarks: dict[str, Point]) -> tuple[Point, Point] | None:
             continue
         vis = min(ear.visibility, sh.visibility)
         if vis >= best_vis:
-            best, best_vis = (ear, sh), vis
+            hip = landmarks.get(f"{side}_hip")
+            if hip is not None and hip.visibility < MIN_HIP_VISIBILITY:
+                hip = None
+            best, best_vis = (ear, sh, hip), vis
     return best
 
 
@@ -72,6 +91,7 @@ class PostureJudge:
     def __init__(self, settings: dict):
         self.settings = settings
         self.angle: float | None = None       # smoothed neck angle
+        self.using_hip = False                # last reading used the torso line (vs. vertical)
         self.last_seen: float | None = None   # time of last usable pose
         self.slouch_since: float | None = None
         self.prompted = False
@@ -84,6 +104,7 @@ class PostureJudge:
             return self._no_pose(now)
 
         raw = neck_angle_deg(*side)
+        self.using_hip = side[2] is not None
         self.angle = raw if self.angle is None else EMA_ALPHA * raw + (1 - EMA_ALPHA) * self.angle
         self.last_seen = now
 

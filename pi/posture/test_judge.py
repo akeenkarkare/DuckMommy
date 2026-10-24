@@ -17,6 +17,17 @@ def pose(angle_deg, side="left", vis=0.9):
     return {f"{side}_ear": ear, f"{side}_shoulder": sh}
 
 
+def body(torso_deg, neck_deg, hip_vis=0.9, vis=0.9):
+    """Side view with a hip. torso_deg: whole-body lean from vertical.
+    neck_deg: head's lean from vertical (equal to torso_deg = straight back)."""
+    hip = Point(300, 500, hip_vis)
+    sh = Point(300 + 200 * math.sin(math.radians(torso_deg)),
+               500 - 200 * math.cos(math.radians(torso_deg)), vis)
+    ear = Point(sh.x + 100 * math.sin(math.radians(neck_deg)),
+                sh.y - 100 * math.cos(math.radians(neck_deg)), vis)
+    return {"left_hip": hip, "left_shoulder": sh, "left_ear": ear}
+
+
 def run(judge, start, seconds, frame):
     """Feed `seconds` of frames; return (end_time, all actions)."""
     out, t = [], start
@@ -39,6 +50,18 @@ class Geometry(unittest.TestCase):
 
     def test_facing_either_way(self):
         self.assertAlmostEqual(neck_angle_deg(Point(200, 200), Point(300, 300)), 45)
+
+    def test_straight_lean_with_hip_is_zero(self):
+        b = body(40, 40)
+        self.assertAlmostEqual(neck_angle_deg(b["left_ear"], b["left_shoulder"], b["left_hip"]), 0, places=5)
+
+    def test_head_forward_off_torso(self):
+        b = body(0, 40)
+        self.assertAlmostEqual(neck_angle_deg(b["left_ear"], b["left_shoulder"], b["left_hip"]), 40, places=5)
+
+    def test_rounded_back_while_leaning(self):
+        b = body(20, 55)                                  # torso leans 20, head juts to 55
+        self.assertAlmostEqual(neck_angle_deg(b["left_ear"], b["left_shoulder"], b["left_hip"]), 35, places=5)
 
     def test_severity_mapping(self):
         self.assertEqual(threshold_deg(0), 45)
@@ -101,6 +124,20 @@ class Timing(unittest.TestCase):
         s["posture_severity"] = 0                         # 45 deg threshold: 40 no longer counts
         _, acts = run(j, 0, 10, pose(40))
         self.assertEqual(acts, [])
+
+    def test_leaning_forward_straight_is_not_a_slouch(self):
+        _, acts = run(PostureJudge(dict(SETTINGS)), 0, 20, body(40, 40))
+        self.assertEqual(acts, [])
+
+    def test_head_jut_with_hip_is_a_slouch(self):
+        _, acts = run(PostureJudge(dict(SETTINGS)), 0, 8, body(10, 50))
+        self.assertEqual([e["state"] for e in events(acts)], ["slouch"])
+
+    def test_hidden_hip_falls_back_to_vertical(self):
+        j = PostureJudge(dict(SETTINGS))
+        _, acts = run(j, 0, 8, body(40, 40, hip_vis=0.1))   # no hip -> 40 vs vertical counts
+        self.assertFalse(j.using_hip)
+        self.assertEqual(len(events(acts)), 1)
 
     def test_reset_on_leave(self):
         j = PostureJudge(dict(SETTINGS))
