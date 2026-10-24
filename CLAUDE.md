@@ -7,7 +7,7 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 2. **Per-user isolation is non-negotiable.** Every DB query filters by the `user_id` from the authenticated session. Never take it from the request body or query params.
 3. **Never commit secrets.** API keys and DB URIs live in `.env` only. `.env` is gitignored, and `.env.example` lists the variable names.
 4. **Ask before adding a dependency.** This is especially important on the Pi, because installs there are slow and can break the camera stack.
-5. **Video stays on the Pi, with one owner-approved exception.** The Pi sends events and metrics to the server, never a stored or always-on camera feed. The exception (Akeen, 2026-10-24) is the dashboard's opt-in **live view**: annotated JPEG frames go Pi → relay → dashboard over the authenticated sockets, only while an allowed account (`VIDEO_VIEWERS` in `backend/.env`) has it open and the duck is with them, and are never stored. Keep it that way: no recording, no unauthenticated video endpoint on the server.
+5. **Video stays on the Pi, with one owner-approved exception.** The Pi sends events and metrics to the server, never a stored or always-on camera feed. The exception (Akeen, 2026-10-24) is the dashboard's opt-in **live view**: annotated JPEG frames go Pi → relay → dashboard over the authenticated sockets, only while a logged-in user the duck is with has it open (optionally restricted with `VIDEO_VIEWERS` in `backend/.env`), and are never stored. Keep it that way: no recording, no unauthenticated video endpoint on the server.
 6. **If something below is marked TODO, ask; don't invent an answer.**
 
 ## Hardware (all inside the duck, always plugged into wall power)

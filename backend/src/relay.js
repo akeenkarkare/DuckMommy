@@ -34,9 +34,11 @@ const SETTINGS_FIELDS = [
 ];
 const COACH_COMMANDS = new Set(['start_focus', 'break', 'finish', 'time_left', 'more_time']);
 
-// Live camera view (dashboard Camera panel). Off unless VIDEO_VIEWERS lists who may watch:
-// comma-separated account emails, or "*" for any logged-in user. Frames are never stored.
-const VIDEO_VIEWERS = (process.env.VIDEO_VIEWERS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+// Live camera view (dashboard Camera panel). Default: any logged-in user the duck is with.
+// VIDEO_VIEWERS=a@x.com,b@y.com restricts it to those accounts; VIDEO_VIEWERS=off disables it.
+// Frames are never stored.
+const VIDEO_VIEWERS = (process.env.VIDEO_VIEWERS || '*').split(',').map((s) => s.trim().toLowerCase())
+  .filter((s) => s && s !== 'off');
 const VIDEO_FPS = Math.max(1, Math.min(15, Number(process.env.VIDEO_FPS) || 6));
 const VIDEO_MAX_BUFFER = 1024 * 1024;   // a watcher this far behind skips frames
 const videoAllowed = (email) => VIDEO_VIEWERS.includes('*') || (!!email && VIDEO_VIEWERS.includes(email.toLowerCase()));
@@ -89,7 +91,7 @@ function updateVideo() {
   for (const ws of dashboards()) {
     if (!ws.watching) continue;
     const reason = !videoAllowed(ws.email)
-      ? (VIDEO_VIEWERS.length ? 'This account isn\'t allowed to watch (VIDEO_VIEWERS in backend/.env).' : 'Live view is off on this server (set VIDEO_VIEWERS in backend/.env).')
+      ? (VIDEO_VIEWERS.length ? 'This account isn\'t allowed to watch (VIDEO_VIEWERS in backend/.env).' : 'Live view is turned off on this server (VIDEO_VIEWERS=off in backend/.env).')
       : ws.userId !== activeUserId ? 'The duck is with someone else.' : !duck ? 'Duck offline.' : null;
     send(ws, { type: 'video_status', streaming: on && !reason, reason, fps: VIDEO_FPS });
   }
@@ -402,5 +404,7 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   log(`relay listening on ws://localhost:${PORT}`);
-  log(VIDEO_VIEWERS.length ? `live view allowed for: ${VIDEO_VIEWERS.join(', ')}` : 'live view off (set VIDEO_VIEWERS to allow it)');
+  log(!VIDEO_VIEWERS.length ? 'live view off (VIDEO_VIEWERS=off)'
+    : VIDEO_VIEWERS.includes('*') ? 'live view on for any logged-in user the duck is with'
+    : `live view only for: ${VIDEO_VIEWERS.join(', ')}`);
 });
