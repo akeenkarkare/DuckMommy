@@ -177,3 +177,66 @@ class OpenCVCamera:
 
 def open_source(source: str, light: str = "auto", noir: bool = False):
     return PiCamera(light=light, noir=noir) if source == "pi" else OpenCVCamera(source)
+
+
+class RetryingCamera:
+    """The camera, opened lazily and re-tried if it's busy, so the duck stays online without it.
+
+    Only one program can own the Pi camera. If something else has it (asl/run.py, stream.sh, ...)
+    the duck keeps running (relay link, quacks, coach) and grabs the camera as soon as it's free.
+    """
+
+    RETRY_S = 10.0
+
+    def __init__(self, opener):
+        self._opener = opener
+        self.cam = None
+        self._next_try = 0.0
+        self._last_error: str | None = None
+
+    def _ready(self) -> bool:
+        if self.cam is not None:
+            return True
+        now = time.monotonic()
+        if now < self._next_try:
+            return False
+        try:
+            self.cam = self._opener()
+            log("camera ready" + (" (it was busy before)" if self._last_error else ""))
+            self._last_error = None
+            return True
+        except (Exception, SystemExit) as e:
+            self._next_try = now + self.RETRY_S
+            err = str(e) or e.__class__.__name__
+            if err != self._last_error:
+                log(f"camera unavailable ({err}). Another program may be using it (asl/run.py, "
+                    f"posture/run.py, camera/stream.sh); the duck stays online and retries every {self.RETRY_S:.0f} s")
+                self._last_error = err
+            return False
+
+    @property
+    def available(self) -> bool:
+        return self.cam is not None
+
+    @property
+    def night(self) -> bool:
+        return bool(self.cam and self.cam.night)
+
+    @property
+    def lux(self):
+        return self.cam.lux if self.cam else None
+
+    def start(self):
+        if self._ready():
+            self.cam.start()
+
+    def stop(self):
+        if self.cam:
+            self.cam.stop()
+
+    def read(self):
+        return self.cam.read() if self._ready() else None
+
+    def close(self):
+        if self.cam:
+            self.cam.close()

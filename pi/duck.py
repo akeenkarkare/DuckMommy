@@ -46,7 +46,7 @@ from motion.detect import MotionDetector                    # noqa: E402
 from sentry.watch import SentryWatch, UltrasonicMotion      # noqa: E402
 from shared.config import load_env, pin                     # noqa: E402
 from shared.presence import Presence                        # noqa: E402
-from shared.sources import open_source                      # noqa: E402
+from shared.sources import RetryingCamera, open_source      # noqa: E402
 from shared.uplink import Uplink                            # noqa: E402
 from shared.voice import Voice                              # noqa: E402
 from sounds.alerts import SoundAlerts                       # noqa: E402
@@ -241,7 +241,7 @@ class Duck:
             from pose import PoseDetector
             pose = PoseDetector(args.pose_model)
 
-        cam = open_source(args.source, light=args.light, noir=args.noir)
+        cam = RetryingCamera(lambda: open_source(args.source, light=args.light, noir=args.noir))
         judge, watch = PostureJudge(self.settings), SentryWatch(self.settings)
         presence, umotion = Presence(), UltrasonicMotion()
         cmotion = Motion() if self.wake == "camera" else None
@@ -356,7 +356,7 @@ class Duck:
                     lux = "--" if cam.lux is None else f"{cam.lux:.0f}"
                     where = "AT DESK" if presence.present else ("away (idle)" if idle_away else "away")
                     log(f"status: {where} · person in {stat['pose']}/{stat['frames']} frames "
-                        f"· {stat['frames'] / secs:.1f} fps · camera {'on' if need_cam else 'off'} "
+                        f"· {stat['frames'] / secs:.1f} fps · camera {('on' if cam.available else 'BUSY/unavailable') if need_cam else 'off'} "
                         f"· {'night' if cam.night else 'day'} (lux {lux})"
                         + (f" · distance {distance:.0f} cm" if distance is not None else ""))
                     stat.update(t=now, frames=0, pose=0)
