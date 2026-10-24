@@ -63,6 +63,7 @@ Each folder may get its own short CLAUDE.md with run/test commands. Keep this ro
 
 ## Commands (TODO: fill in as they exist)
 - Pi: `TODO` (until then, `cd backend && npm run duck` simulates it)
+- Camera preview (dev only): laptop `pi/camera/view.sh`, then Pi `pi/camera/stream.sh <laptop-ip>`. See `pi/camera/README.md`.
 - Backend: `cd backend && npm run dev`
 - Dashboard: `cd dashboard && npm run dev` → http://localhost:3000
 
