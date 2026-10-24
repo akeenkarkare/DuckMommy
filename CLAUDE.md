@@ -7,7 +7,7 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 2. **Per-user isolation is non-negotiable.** Every DB query filters by the `user_id` from the authenticated session. Never take it from the request body or query params.
 3. **Never commit secrets.** API keys and DB URIs live in `.env` only. `.env` is gitignored, and `.env.example` lists the variable names.
 4. **Ask before adding a dependency.** This is especially important on the Pi, because installs there are slow and can break the camera stack.
-5. **Video stays on the Pi.** The Pi sends events and metrics to the server, never the raw camera feed.
+5. **Video stays on the Pi, with one owner-approved exception.** The Pi sends events and metrics to the server, never a stored or always-on camera feed. The exception (Akeen, 2026-10-24) is the dashboard's opt-in **live view**: annotated JPEG frames go Pi → relay → dashboard over the authenticated sockets, only while an allowed account (`VIDEO_VIEWERS` in `backend/.env`) has it open and the duck is with them, and are never stored. Keep it that way: no recording, no unauthenticated video endpoint on the server.
 6. **If something below is marked TODO, ask; don't invent an answer.**
 
 ## Hardware (all inside the duck, always plugged into wall power)
@@ -37,7 +37,7 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 
 **Out of scope until 1–5 work:**
 - LLM object analysis ("show the duck a tool and ask what it does"). It needs an always-on API plus clip capture. If you build it later, make it on-demand only: a trigger captures a 5-second clip, which goes to the API.
-- Showing the live OpenCV feed on the dashboard. The demo uses a person acting out slouching instead.
+- ~~Showing the live OpenCV feed on the dashboard~~: done as the opt-in live view (see rule 5).
 
 ## Architecture
 ```

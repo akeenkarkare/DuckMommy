@@ -2,6 +2,8 @@
 
   up = Uplink(url, token, on_settings, on_command, on_agenda); up.start()
   up.send_event("posture", {...})     # never blocks; queued while offline
+  up.video_on / up.video_fps          # a dashboard asked for the live view (relay says when)
+  up.send_frame(jpeg_bytes)           # never blocks; only the newest frame is kept, never queued
 
 Reconnects with backoff and resends anything queued while the link was down.
 Needs `pip install websockets` (sync client, websockets >= 12).
@@ -30,9 +32,37 @@ class Uplink:
         self._ws = None
         self._lock = threading.Lock()
         self.connected = False
+        self.video_on, self.video_fps = False, 5
+        self._frame: bytes | None = None
+        self._frame_cv = threading.Condition()
 
     def start(self):
         threading.Thread(target=self._run, daemon=True, name="uplink").start()
+        threading.Thread(target=self._video_sender, daemon=True, name="uplink-video").start()
+
+    def send_frame(self, jpeg: bytes) -> bool:
+        """Live view frame (binary). Dropped unless someone is watching; a newer one replaces it."""
+        if not (self.connected and self.video_on):
+            return False
+        with self._frame_cv:
+            self._frame = jpeg
+            self._frame_cv.notify()
+        return True
+
+    def _video_sender(self):
+        # Separate thread so a slow link drops frames instead of stalling the camera loop.
+        while True:
+            with self._frame_cv:
+                while self._frame is None:
+                    self._frame_cv.wait()
+                data, self._frame = self._frame, None
+            with self._lock:
+                ws = self._ws if self.connected and self.video_on else None
+            if ws:
+                try:
+                    ws.send(data)
+                except Exception:
+                    pass
 
     def send_event(self, etype: str, value: dict):
         msg = json.dumps({"type": "event", "event": {"type": etype, "value": value, "ts": int(time.time() * 1000)}})
@@ -68,9 +98,16 @@ class Uplink:
                             self.on_command(msg.get("command") or {})
                         elif msg.get("type") == "agenda" and self.on_agenda:
                             self.on_agenda(msg.get("items") or [])
+                        elif msg.get("type") == "video":
+                            on = bool(msg.get("on"))
+                            self.video_fps = max(1, min(15, int(msg.get("fps") or 5)))
+                            if on != self.video_on:
+                                log(f"live view {'on' if on else 'off'}" + (f" ({self.video_fps} fps)" if on else ""))
+                            self.video_on = on
             except Exception as e:
                 log(f"disconnected ({e.__class__.__name__}: {e}); retrying in {backoff}s")
             with self._lock:
                 self._ws, self.connected = None, False
+            self.video_on = False   # the relay re-sends it after reconnecting
             time.sleep(backoff)
             backoff = min(backoff * 2, 10)

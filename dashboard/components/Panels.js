@@ -4,6 +4,7 @@ import { useState } from 'react';
 import SlouchChart from './SlouchChart';
 import SignCard from './SignCard';
 import EventLog from './EventLog';
+import LiveView from './LiveView';
 import { RangeField, SelectField, TextField, Toggle } from './Controls';
 
 const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
@@ -19,7 +20,7 @@ const SOUND = {
   calling: ['📣', 'Someone calling', 'long glows'],
 };
 
-function CameraPanel({ events, now, windowMs, s }) {
+function CameraPanel({ events, now, windowMs, s, watch, video, canCommand }) {
   const posture = [...events].reverse().find((e) => e.type === 'posture');
   const presence = [...events].reverse().find((e) => e.type === 'presence');
   const slouches = events.filter((e) => e.type === 'posture' && e.value?.state === 'slouch').length;
@@ -31,6 +32,7 @@ function CameraPanel({ events, now, windowMs, s }) {
         <div className="tile"><div className="label">Slouches · 5m</div><div className="value">{slouches}</div></div>
         <div className="tile"><div className="label">At desk</div><div className="value">{!presence ? '—' : presence.value?.present ? 'Yes' : 'Away'}</div></div>
       </div>
+      <LiveView watch={watch} video={video} canCommand={canCommand} />
       <div className="card">
         <h2>Slouch prompts <span className="sub">per 30 s · last 5 min</span></h2>
         <SlouchChart events={events} now={now} windowMs={windowMs} />

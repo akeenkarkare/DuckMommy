@@ -45,7 +45,7 @@ export default function Dashboard() {
     bridge.current.react({ ...e, message });
   }, [bridge, s.settings]);
 
-  const { connected, status, events, lastAck, send, agenda, bufferMs } = useRelay(!!user, onEvent);
+  const { connected, status, events, lastAck, send, agenda, video, watch, bufferMs } = useRelay(!!user, onEvent);
   const canCommand = connected && status.duck_connected && status.with_you;
 
   useEffect(() => {
@@ -139,7 +139,7 @@ export default function Dashboard() {
             </div>
             <div className="panel-body" key={focus}>
               <Body events={recent} now={now} windowMs={bufferMs} s={s} send={send} canCommand={canCommand}
-                duck={bridge.current} lastAck={lastAck} agenda={agenda} connected={connected} allEvents={events} />
+                duck={bridge.current} lastAck={lastAck} agenda={agenda} connected={connected} allEvents={events} watch={watch} video={video} />
               {s.state && <p className="hint">{s.state}</p>}
             </div>
           </>

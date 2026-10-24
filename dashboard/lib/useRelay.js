@@ -15,7 +15,10 @@ export function useRelay(enabled, onEvent) {
   const [events, setEvents] = useState([]);
   const [lastAck, setLastAck] = useState(null);
   const [agenda, setAgenda] = useState({ items: [], errors: [], feeds: 0, fetched_at: null });
+  const [video, setVideo] = useState({ streaming: false, reason: null, fps: 0 });
   const wsRef = useRef(null);
+  const frameRef = useRef(null);       // live-view frame handler (Blob of a JPEG), set by <LiveView>
+  const watchingRef = useRef(false);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
 
@@ -32,10 +35,15 @@ export function useRelay(enabled, onEvent) {
       const ws = new WebSocket(RELAY_URL);
       wsRef.current = ws;
 
+      ws.binaryType = 'blob';
       ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', role: 'dashboard', access_token: data.session.access_token }));
       ws.onmessage = (e) => {
+        if (typeof e.data !== 'string') { frameRef.current?.(e.data); return; }   // live-view frame
         const msg = JSON.parse(e.data);
-        if (msg.type === 'auth_ok') { setConnected(true); backoff = 1000; }
+        if (msg.type === 'auth_ok') {
+          setConnected(true); backoff = 1000;
+          if (watchingRef.current) ws.send(JSON.stringify({ type: 'video', on: true }));   // resume after reconnect
+        }
         else if (msg.type === 'buffer') setEvents(msg.events);
         else if (msg.type === 'event') {
           setEvents((prev) => [...prev, msg.event].slice(-MAX_LOG));
@@ -44,6 +52,7 @@ export function useRelay(enabled, onEvent) {
         else if (msg.type === 'status') setStatus(msg);
         else if (msg.type === 'command_ack') setLastAck({ ...msg, at: Date.now() });
         else if (msg.type === 'agenda') setAgenda(msg);
+        else if (msg.type === 'video_status') setVideo(msg);
       };
       ws.onclose = (e) => {
         setConnected(false);
@@ -68,5 +77,18 @@ export function useRelay(enabled, onEvent) {
     if (ws?.readyState === 1) ws.send(JSON.stringify(msg));
   }, []);
 
-  return { connected, status, events, lastAck, send, agenda, bufferMs: BUFFER_MS };
+  // Live view: watch(fn) starts frames (fn gets each JPEG Blob) and returns a stop function.
+  const watch = useCallback((onFrame) => {
+    frameRef.current = onFrame;
+    watchingRef.current = true;
+    send({ type: 'video', on: true });
+    return () => {
+      frameRef.current = null;
+      watchingRef.current = false;
+      send({ type: 'video', on: false });
+      setVideo({ streaming: false, reason: null, fps: 0 });
+    };
+  }, [send]);
+
+  return { connected, status, events, lastAck, send, agenda, video, watch, bufferMs: BUFFER_MS };
 }

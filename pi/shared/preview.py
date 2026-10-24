@@ -31,6 +31,29 @@ def _lan_ip() -> str:
         return "<this-pi's-ip>"
 
 
+def render_jpeg(rgb, lines, points=None, quality: int = 70, max_width: int = 640) -> bytes | None:
+    """Annotated JPEG: status lines top-left, plus the posture skeleton (hip-shoulder-ear) if given."""
+    import cv2
+    img = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    if points:
+        for side in ("left", "right"):
+            chain = [points.get(f"{side}_{k}") for k in ("hip", "shoulder", "ear")]
+            chain = [p for p in chain if p is not None and p.visibility >= 0.5]
+            for a, b in zip(chain, chain[1:]):
+                cv2.line(img, (int(a.x), int(a.y)), (int(b.x), int(b.y)), (0, 220, 255), 3)
+            for p in chain:
+                cv2.circle(img, (int(p.x), int(p.y)), 5, (255, 255, 255), -1)
+    for i, (text, color) in enumerate(lines or []):
+        y = 28 + i * 26
+        cv2.putText(img, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 4)
+        cv2.putText(img, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
+    h, w = img.shape[:2]
+    if w > max_width:
+        img = cv2.resize(img, (max_width, int(h * max_width / w)), interpolation=cv2.INTER_AREA)
+    ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return jpg.tobytes() if ok else None
+
+
 class PreviewServer:
     def __init__(self, port: int = 8090, key: str | None = None):
         import cv2
@@ -44,20 +67,14 @@ class PreviewServer:
         threading.Thread(target=server.serve_forever, daemon=True, name="preview").start()
         print(f"# preview: open http://{_lan_ip()}:{port}/?k={self.key} in a browser", file=sys.stderr, flush=True)
 
-    def push(self, rgb, lines: list[tuple[str, tuple[int, int, int]]]):
+    def push(self, rgb, lines: list[tuple[str, tuple[int, int, int]]], points=None):
         """lines: (text, BGR colour) drawn top-left."""
         if not self.viewers:
             return
-        cv2 = self.cv2
-        img = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-        for i, (text, color) in enumerate(lines):
-            y = 28 + i * 26
-            cv2.putText(img, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 4)
-            cv2.putText(img, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
-        ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
-        if ok:
+        jpg = render_jpeg(rgb, lines, points, quality=70, max_width=10_000)
+        if jpg:
             with self.cond:
-                self.jpg = jpg.tobytes()
+                self.jpg = jpg
                 self.cond.notify_all()
 
     def _handler(self):

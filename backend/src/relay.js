@@ -33,6 +33,13 @@ const SETTINGS_FIELDS = [
   'coach_enabled', 'coach_interval_min', 'coach_tone',
 ];
 const COACH_COMMANDS = new Set(['start_focus', 'break', 'finish', 'time_left', 'more_time']);
+
+// Live camera view (dashboard Camera panel). Off unless VIDEO_VIEWERS lists who may watch:
+// comma-separated account emails, or "*" for any logged-in user. Frames are never stored.
+const VIDEO_VIEWERS = (process.env.VIDEO_VIEWERS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+const VIDEO_FPS = Math.max(1, Math.min(15, Number(process.env.VIDEO_FPS) || 6));
+const VIDEO_MAX_BUFFER = 1024 * 1024;   // a watcher this far behind skips frames
+const videoAllowed = (email) => VIDEO_VIEWERS.includes('*') || (!!email && VIDEO_VIEWERS.includes(email.toLowerCase()));
 const AGENDA_REFRESH_MS = 10 * 60 * 1000;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
@@ -69,6 +76,34 @@ function sendToUser(userId, msg) {
 function broadcastStatus() {
   for (const ws of dashboards()) {
     send(ws, { type: 'status', duck_connected: !!duck, with_you: ws.userId === activeUserId });
+  }
+  updateVideo();
+}
+
+// ─── live view ───────────────────────────────────────────────────────────────
+// Only the active user's own dashboards, only allowed accounts, only while they ask.
+const watchers = () => dashboards().filter((ws) => ws.readyState === 1 && ws.watching && ws.userId === activeUserId && videoAllowed(ws.email));
+let videoOn = false;
+function updateVideo() {
+  const on = !!duck && watchers().length > 0;
+  for (const ws of dashboards()) {
+    if (!ws.watching) continue;
+    const reason = !videoAllowed(ws.email)
+      ? (VIDEO_VIEWERS.length ? 'This account isn\'t allowed to watch (VIDEO_VIEWERS in backend/.env).' : 'Live view is off on this server (set VIDEO_VIEWERS in backend/.env).')
+      : ws.userId !== activeUserId ? 'The duck is with someone else.' : !duck ? 'Duck offline.' : null;
+    send(ws, { type: 'video_status', streaming: on && !reason, reason, fps: VIDEO_FPS });
+  }
+  if (on !== videoOn) {
+    videoOn = on;
+    send(duck, { type: 'video', on, fps: VIDEO_FPS });
+    log(`live view ${on ? 'on' : 'off'}`);
+  }
+}
+
+function forwardFrame(data) {
+  if (!activeUserId) return;
+  for (const ws of watchers()) {
+    if (ws.bufferedAmount < VIDEO_MAX_BUFFER) ws.send(data, { binary: true });
   }
 }
 
@@ -164,6 +199,7 @@ async function handleAuth(ws, msg) {
     ws.role = 'duck';
     send(ws, { type: 'auth_ok' });
     log('duck connected');
+    videoOn = false;   // fresh duck: tell it again if anyone is watching (broadcastStatus -> updateVideo)
     pushSettings();
     if (activeUserId) sendAgenda(activeUserId);
     broadcastStatus();
@@ -175,6 +211,7 @@ async function handleAuth(ws, msg) {
     if (error || !data?.user) return ws.close(4003, 'bad session');
     ws.role = 'dashboard';
     ws.userId = data.user.id; // from the verified JWT only
+    ws.email = data.user.email ?? null;
     send(ws, { type: 'auth_ok', user_id: ws.userId });
     send(ws, { type: 'buffer', events: recentEvents(ws.userId) });
     log('dashboard connected', ws.userId);
@@ -203,6 +240,13 @@ function handleDashboard(ws, msg) {
 
   if (msg.type === 'settings_changed') {
     if (isActive) loadSettings(ws.userId);
+    return;
+  }
+
+  if (msg.type === 'video') {   // {type:"video", on} from the Camera panel's live view
+    ws.watching = !!msg.on;
+    if (!msg.on) send(ws, { type: 'video_status', streaming: false, reason: null, fps: VIDEO_FPS });
+    updateVideo();
     return;
   }
 
@@ -306,19 +350,23 @@ const server = createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/nudge') return void handleNudge(req, res);
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID), coach_ai: !!ANTHROPIC_API_KEY }));
+    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID), coach_ai: !!ANTHROPIC_API_KEY, live_view: VIDEO_VIEWERS.length > 0, watching: watchers().length }));
   }
   res.writeHead(404).end();
 });
 
-const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
+const wss = new WebSocketServer({ server, maxPayload: 512 * 1024 });   // room for a camera frame
 
 wss.on('connection', (ws) => {
   ws.isAlive = true;
   ws.on('pong', () => (ws.isAlive = true));
   const authTimer = setTimeout(() => !ws.role && ws.close(4001, 'auth timeout'), AUTH_TIMEOUT_MS);
 
-  ws.on('message', async (raw) => {
+  ws.on('message', async (raw, isBinary) => {
+    if (isBinary) {   // only the authenticated duck may send frames
+      if (ws.role === 'duck' && ws === duck) forwardFrame(raw);
+      return;
+    }
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
     if (!ws.role) {
@@ -352,4 +400,7 @@ setInterval(() => {
   }
 }, HEARTBEAT_MS);
 
-server.listen(PORT, () => log(`relay listening on ws://localhost:${PORT}`));
+server.listen(PORT, () => {
+  log(`relay listening on ws://localhost:${PORT}`);
+  log(VIDEO_VIEWERS.length ? `live view allowed for: ${VIDEO_VIEWERS.join(', ')}` : 'live view off (set VIDEO_VIEWERS to allow it)');
+});

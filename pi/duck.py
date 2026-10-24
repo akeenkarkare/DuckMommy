@@ -3,6 +3,8 @@
   python3 duck.py                      everything, using pins/devices from pi/.env
   python3 duck.py --source 0           laptop webcam instead of the Pi camera (dev)
   python3 duck.py --preview            + live annotated view (dev); prints http://<pi-ip>:8090/?k=<key>
+                                       (the dashboard's Camera panel can also show it live, via the relay,
+                                        for accounts in VIDEO_VIEWERS; frames only flow while someone watches)
 
 What runs when:
   always        pressure sensor -> quack + `pat` event
@@ -245,6 +247,7 @@ class Duck:
             from shared.preview import PreviewServer
             preview = PreviewServer(args.preview_port, self.env.get("PREVIEW_KEY") or None)
         stat = {"t": time.monotonic(), "frames": 0, "pose": 0}
+        last_video = 0.0
         motion = MotionDetector()      # stillness at the desk (coach "zoned out?" + idle-away)
         idle_away = False              # marked away for not moving; wakes on camera motion
         slouches = 0                   # this sitting, for the coach
@@ -324,10 +327,18 @@ class Duck:
                         self.act(watch.frame(now, person_confidence(points), cam.night))
                     elif sentry_on and cmotion and cmotion.fraction(rgb) >= MOTION_FRACTION:
                         self.act(watch.trigger(now, None, "camera"))
-                    if preview:
+                    live = self.uplink is not None and self.uplink.video_on and now - last_video >= 1 / self.uplink.video_fps
+                    if preview or live:
                         still = motion.still_for(now) if presence.present else None
-                        preview.push(rgb, self._overlay(presence, points, judge, watch, words, cam,
-                                                        self.coach, still, idle_away))
+                        lines = self._overlay(presence, points, judge, watch, words, cam, self.coach, still, idle_away)
+                        if preview:
+                            preview.push(rgb, lines, points)
+                        if live:   # dashboard live view, through the relay
+                            from shared.preview import render_jpeg
+                            jpg = render_jpeg(rgb, lines, points, quality=60)
+                            if jpg:
+                                self.uplink.send_frame(jpg)
+                            last_video = now
                 self.act(watch.tick(now))
 
                 if presence.present:

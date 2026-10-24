@@ -11,6 +11,7 @@
 | Sound alerts: doorbell, phone, alarm, beeps, shouting → LED | USB mic + LED | `sounds/` | `sound {kind, label, score}` |
 | Sentry (when away) + night vision | ultrasonic + camera | `sentry/`, `shared/sources.py` | `sentry` |
 | At desk / away | ultrasonic (or camera) | `shared/presence.py` | `presence` |
+| Live view on the dashboard (only while someone allowed is watching) | camera | `shared/uplink.py` `send_frame`, `shared/preview.py` `render_jpeg` | (binary frames, not events) |
 | Lock-in coach: what's due when you sit down, deadline + event reminders, check-ins, focus sessions | calendar from the relay + camera | `coach/` (lines via relay `/nudge`, templates offline) | `coach {kind, text}` |
 | Zoned out? 5 min with no movement → nudge, 5 more → away (`presence` reason `idle`) | camera | `motion/` | `coach`, `presence` |
 

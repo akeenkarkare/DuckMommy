@@ -21,7 +21,7 @@ Web frontend. Each logged-in user sees and controls only their own duck. Root ru
    - **Test controls:** e.g. a "say it now" button, sent through the relay to the duck
    - **Focus & coach** panel (the duck's back): focus session buttons (sent as `command {type:"coach", name}`), what the duck said (`coach` events), coach on/off, check-in length, personality (gentle / coach / savage)
    - **Calendar** panel: "Up next" from the relay's `agenda` message, feed errors, the calendar links field (`settings.calendar_urls`), refresh (`agenda_refresh`)
-4. Not in scope: the live camera feed (video stays on the Pi).
+4. **Live view** (Camera panel, `components/LiveView.js`): opt-in "Watch live" shows the duck's annotated camera frames from the relay (`useRelay().watch`). Only for accounts in the relay's `VIDEO_VIEWERS`; stops when closed; never recorded.
 
 ## Design: the 3D duck
 - `components/duck/DuckStage.js` is one three.js scene mounted in `app/layout.js`, so it never unmounts. `/login` and `/register` show the **hero** close-up; `/` shows the **dashboard** duck with labels. Changing route eases between the two, with a spin.
