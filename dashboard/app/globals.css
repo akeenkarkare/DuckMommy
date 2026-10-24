@@ -48,6 +48,28 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; margin: 
 .ui { position: fixed; inset: 0; z-index: 3; pointer-events: none; }
 .ui :is(button, a, input, label, form, .panel, .auth-card, .topbar > *, .dock) { pointer-events: auto; }
 
+.duck-stage { transition: opacity 0.28s ease; }
+
+/* ── background picker ──────────────────────────────────────────────────── */
+.scene-picker { position: relative; }
+.scene-current { padding: 4px 12px 4px 4px; border-radius: 999px; gap: 8px; }
+.scene-current img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; object-position: center 0%; }
+.scene-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 5; width: 300px; padding: 8px; border-radius: 18px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; animation: fade-in 0.25s var(--ease) both;
+  background: rgba(16, 16, 20, 0.94);
+}
+.scene-option {
+  display: grid; gap: 6px; padding: 6px; border-radius: 12px; border: 1px solid transparent; background: transparent;
+  cursor: pointer; text-align: left; font-size: 13px; font-weight: 600; transition: background 0.2s, border-color 0.2s;
+}
+.scene-option img { width: 100%; height: 70px; object-fit: cover; object-position: center 0%; border-radius: 8px; }   /* top of the thumb: skips Poly Haven's preview spheres */
+.scene-option:hover { background: rgba(255, 255, 255, 0.07); }
+.scene-option[aria-checked="true"] { border-color: var(--duck); background: rgba(255, 201, 60, 0.1); }
+.auth-scene { position: absolute; top: 18px; right: 22px; }
+.brand h1, .brand .who, .auth-brand { text-shadow: 0 1px 12px rgba(0, 0, 0, 0.55); }
+@media (max-width: 899px) { .scene-name { display: none; } .scene-current { padding: 4px; } }
+
 /* ── labels on the duck ─────────────────────────────────────────────────── */
 .duck-leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .duck-leaders polyline { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 1.5; transition: opacity 0.2s; }
@@ -180,7 +202,7 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; margin: 
 .dock .t { font-weight: 600; font-size: 13px; }
 .dock .s { font-size: 11px; opacity: 0.7; font-variant-numeric: tabular-nums; }
 
-.hint-float { position: absolute; left: 50%; bottom: 96px; translate: -50% 0; color: var(--text-muted); font-size: 13px; transition: opacity 0.6s; text-align: center; padding: 0 16px; }
+.hint-float { position: absolute; left: 50%; bottom: 96px; translate: -50% 0; color: var(--text-secondary); font-size: 13px; transition: opacity 0.6s; text-align: center; padding: 6px 14px; border-radius: 999px; background: rgba(10, 10, 14, 0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); white-space: nowrap; max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis; }
 
 .panel {
   position: absolute; top: 84px; right: 12px; bottom: 12px; width: min(440px, calc(100vw - 24px));

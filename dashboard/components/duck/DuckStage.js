@@ -3,7 +3,10 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { buildDuck, buildGlow } from './buildDuck';
+import { buildWater } from './water';
+import { sceneById } from './scenes';
 import { HOTSPOTS } from './hotspots';
 import { useDuck } from './DuckContext';
 
@@ -19,6 +22,7 @@ const PRESETS = {
   dashboard: { cam: [0, 0.8, 9.2], target: [0, 0.45, 0], yaw: 0.42, pitch: 0.14 },
   dashboardNarrow: { cam: [0, 0.9, 15], target: [0, 0.45, 0], yaw: 0.42, pitch: 0.14 },
 };
+const GROUND_Y = -0.92;
 const LABEL_DY = { camera: -0.06, petting: -0.1, voice: 0.02, microphone: 0.1, focus: -0.12 };
 
 const nearest = (angle, ref) => angle + TAU * Math.round((ref - angle) / TAU);
@@ -26,13 +30,13 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const easeOutBack = (x) => 1 + 2.2 * (x - 1) ** 3 + 1.2 * (x - 1) ** 2;
 
 export default function DuckStage() {
-  const { mode, focus, setFocus, badges, bridge } = useDuck();
+  const { mode, focus, setFocus, badges, bridge, scene: sceneId } = useDuck();
   const mountRef = useRef(null);
   const labelRefs = useRef({});
   const lineRefs = useRef({});
   const dotRefs = useRef({});
   const bubbleRef = useRef(null);
-  const live = useRef({ mode, focus, setFocus });   // what the render loop reads
+  const live = useRef({ mode, focus, setFocus, sceneId });   // what the render loop reads
   const ctrl = useRef(null);                        // render-loop state, created on mount
 
   live.current.setFocus = setFocus;
@@ -56,6 +60,11 @@ export default function DuckStage() {
   }, [focus]);
 
   useEffect(() => {
+    live.current.sceneId = sceneId;
+    ctrl.current?.applyScene(sceneId);
+  }, [sceneId]);
+
+  useEffect(() => {
     const mount = mountRef.current;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -74,7 +83,7 @@ export default function DuckStage() {
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environmentIntensity = 0.55;
 
-    const camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 0.1, 5000);   // far: water to the horizon
 
     const key = new THREE.DirectionalLight('#fff1d6', 2.8);
     key.position.set(3, 6, 4);
@@ -90,12 +99,16 @@ export default function DuckStage() {
 
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.ShadowMaterial({ opacity: 0.38 }));
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.92;
+    ground.position.y = GROUND_Y;
     ground.receiveShadow = true;
-    scene.add(ground, buildGlow());
+    const glow = buildGlow();
+    scene.add(ground, glow);
 
     const duck = buildDuck();
     scene.add(duck.group);
+    const water = buildWater();
+    water.mesh.visible = false;
+    scene.add(water.mesh);
     const meshes = [];
     duck.group.traverse((o) => o.isMesh && meshes.push(o));
 
@@ -118,8 +131,50 @@ export default function DuckStage() {
       ripples: [], nextBlink: 2, blink: 0,
       bubbleUntil: 0, sides: {},
       intro: 0,
+      water: false, nextVoiceRip: 0, nextIdleRip: 1, splash: 0, airborne: false,
     };
     ctrl.current = c;
+
+    // ── background scenes (HDR panoramas) ──────────────────────────────────
+    const hdrLoader = new HDRLoader();
+    const loaded = new Map();   // scene id -> { tex, env }
+    let wanted = null, disposed = false, firstScene = true;
+    const fade = (on) => { mount.style.opacity = on ? '1' : '0'; };
+    const applyScene = async (id) => {
+      const cfg = sceneById(id);
+      wanted = cfg.id;
+      let entry = loaded.get(cfg.id);
+      if (!entry) {
+        try {
+          const tex = await hdrLoader.loadAsync(`/scenes/${cfg.file}_2k.hdr`);
+          tex.mapping = THREE.EquirectangularReflectionMapping;
+          entry = { tex, env: pmrem.fromEquirectangular(tex).texture };
+          loaded.set(cfg.id, entry);
+        } catch (err) {
+          console.warn(`Background "${cfg.id}" is missing. Run: npm run get-scenes`, err);
+          return;
+        }
+      }
+      if (disposed || wanted !== cfg.id) return;
+      if (!firstScene) { fade(false); await new Promise((r) => setTimeout(r, 280)); }
+      if (disposed || wanted !== cfg.id) return;
+      scene.background = entry.tex;
+      scene.backgroundRotation.set(0, cfg.rot, 0);
+      scene.environment = entry.env;
+      scene.environmentRotation.set(0, cfg.rot, 0);
+      scene.environmentIntensity = 1;
+      renderer.toneMappingExposure = cfg.exposure;
+      key.intensity = 1.7; rim.intensity = 0.5; fill.intensity = 0.1;   // the panorama does most of the lighting
+      c.water = true;   // every scene is open water now
+      water.setColor(cfg.water);
+      water.mesh.visible = true;
+      ground.visible = false;
+      glow.visible = false;
+      firstScene = false;
+      fade(true);
+    };
+    c.applyScene = applyScene;
+    applyScene(live.current.sceneId);
 
     // ── reactions (called by the dashboard for live events) ──────────────────
     const bubble = (text, ms = 2600) => {
@@ -131,7 +186,7 @@ export default function DuckStage() {
       el.classList.add('pop');
       c.bubbleUntil = performance.now() + ms;
     };
-    const squish = () => { c.squishV -= reduced ? 0 : 5.5; c.ring = 1; };
+    const squish = () => { c.squishV -= reduced ? 0 : 5.5; c.ring = 1; c.splash = 0.07; };
     const hop = (v = 2.4) => { if (!reduced) c.hopV = v; };
     const talk = (text) => { c.talk = Math.min(4, 0.6 + (text?.length ?? 8) * 0.055); };
     const ripple = () => { const t = performance.now() / 1000; c.ripples = [t, t + 0.25, t + 0.5]; };
@@ -329,6 +384,26 @@ export default function DuckStage() {
         if (c.hopY === 0 && c.hopV < 0) c.hopV = 0;
       }
       duck.bob.position.y = (reduced ? 0 : Math.sin(t * 1.5) * 0.035) + c.hopY;
+      // afloat: rock gently with the water
+      duck.bob.rotation.z = c.water && !reduced ? Math.sin(t * 1.1) * 0.035 : 0;
+      duck.bob.rotation.x = c.water && !reduced ? Math.sin(t * 0.8 + 1) * 0.025 : 0;
+
+      // water ripples: splash on pats and landings, rings from the beak while talking, idle bobbing
+      water.update(t);
+      if (c.water) {
+        if (c.hopY > 0.05) c.airborne = true;
+        else if (c.airborne && c.hopY === 0) { c.airborne = false; c.splash = Math.max(c.splash, 0.08); }
+        if (c.splash) { water.ripple(duck.group.position.x, duck.group.position.z, c.splash, 1.0); c.splash = 0; }
+        if (c.talk > 0 && t > c.nextVoiceRip) {
+          const beak = tmp.set(0, 1.0, 1.35).applyMatrix4(duck.group.matrixWorld);
+          water.ripple(beak.x, beak.z, 0.032, 0.05);
+          c.nextVoiceRip = t + 0.32;
+        }
+        if (!reduced && t > c.nextIdleRip) {
+          water.ripple(duck.group.position.x, duck.group.position.z, 0.012, 1.05);
+          c.nextIdleRip = t + 2.2 + Math.random() * 1.5;
+        }
+      }
 
       const lookX = m === 'hero' ? c.look.neckYaw : 0;
       const lookY = m === 'hero' ? c.look.neckPitch : (reduced ? 0 : Math.sin(t * 0.7) * 0.04);
@@ -417,6 +492,8 @@ export default function DuckStage() {
         o.geometry?.dispose();
         [].concat(o.material ?? []).forEach((mt) => { mt.map?.dispose(); mt.dispose(); });
       });
+      disposed = true;
+      for (const e of loaded.values()) { e.tex.dispose(); e.env.dispose(); }
       scene.environment?.dispose();
       pmrem.dispose();
       renderer.dispose();

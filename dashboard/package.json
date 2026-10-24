@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "get-scenes": "bash scripts/get-scenes.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

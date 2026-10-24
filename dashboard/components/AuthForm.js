@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useDuck } from '@/components/duck/DuckContext';
+import ScenePicker from '@/components/ScenePicker';
 
 export default function AuthForm({ mode }) {
   const router = useRouter();
@@ -46,6 +47,7 @@ export default function AuthForm({ mode }) {
   return (
     <main className={`auth ${leaving ? 'leaving' : ''}`}>
       <div className="auth-brand"><span aria-hidden>🦆</span> Duck Daddy</div>
+      <div className="auth-scene"><ScenePicker /></div>
 
       <form className="auth-card glass" onSubmit={onSubmit}>
         <h1 className="auth-title">{isRegister ? 'Register' : 'Log in'}</h1>

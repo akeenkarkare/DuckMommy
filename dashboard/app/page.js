@@ -8,6 +8,7 @@ import { useSettings } from '@/lib/useSettings';
 import { useDuck } from '@/components/duck/DuckContext';
 import { HOTSPOTS, ACTIVITY, CALENDAR } from '@/components/duck/hotspots';
 import { PANELS, focusSession } from '@/components/Panels';
+import ScenePicker from '@/components/ScenePicker';
 
 function useNow(ms) {
   const [now, setNow] = useState(() => Date.now());
@@ -110,6 +111,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="row">
+          <ScenePicker />
           <DuckStatus connected={connected} status={status} />
           <button className="btn glass" onClick={() => supabase.auth.signOut()}>Log out</button>
         </div>
