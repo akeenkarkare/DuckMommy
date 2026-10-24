@@ -28,6 +28,11 @@ cp .env.example .env                             # then fill in token, relay URL
 Laptop side: put `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in `backend/.env`, then
 `cd backend && npm run make-quack` makes `assets/quack.wav` (copy the repo to the Pi after).
 
+## Camera won't start?
+`./doctor.sh` (from `pi/`, venv active) checks the usual causes in order (camera
+detected, camera already in use, venv/picamera2/numpy, mediapipe version, models,
+laptop camera permission) and prints the fix for each.
+
 ## Run
 ```bash
 python3 duck.py                 # everything
