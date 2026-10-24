@@ -72,7 +72,7 @@ Each folder may get its own short CLAUDE.md with run/test commands. Keep this ro
 - Sign to Duck data + training: see `pi/asl/README.md` (`duck.py` loads the model).
 - Sentry: `cd pi/sentry && python3 run.py --trig <BCM> --echo <BCM>` (or `--no-ultrasonic`). Night vision is automatic. See `pi/sentry/README.md`.
 - Camera preview (dev only): laptop `pi/camera/view.sh`, then Pi `pi/camera/stream.sh <laptop-ip>`. See `pi/camera/README.md`.
-- **Website (relay + dashboard together): `./dev.sh`** → http://localhost:3000 · `./dev.sh --fake-duck` adds the simulated duck (no Pi needed)
+- **Website (relay + dashboard together): `./dev.sh`** → http://localhost:3000 · `./dev.sh --fake-duck` adds the simulated duck (no Pi needed) · **on a server use `./dev.sh --prod`** (Next 16 dev mode won't hydrate for browsers opening it by IP/hostname)
 - Backend: `cd backend && npm run dev` · tests: `npm test`
 - Supabase: run `backend/supabase/migrations/003_coach_and_calendar.sql` once for the coach + calendar settings.
 - Camera won't start: `cd pi && ./doctor.sh`

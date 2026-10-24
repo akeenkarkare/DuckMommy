@@ -2,11 +2,19 @@
 # Start the website: the relay + the dashboard together. Ctrl+C stops both.
 #   ./dev.sh              relay (ws://localhost:RELAY_PORT, default 8080) + dashboard (http://localhost:3000)
 #   ./dev.sh --fake-duck  same, plus the simulated duck (no Pi needed)
+#   ./dev.sh --prod       production build + `next start`: use this on a server. Next's dev mode
+#                         won't send its JavaScript to browsers that open the site by IP/hostname.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-FAKE_DUCK=0
-[[ "${1:-}" == "--fake-duck" ]] && FAKE_DUCK=1
+FAKE_DUCK=0 PROD=0
+for arg in "$@"; do
+  case "$arg" in
+    --fake-duck) FAKE_DUCK=1 ;;
+    --prod) PROD=1 ;;
+    *) echo "unknown option $arg (use --prod and/or --fake-duck)" >&2; exit 2 ;;
+  esac
+done
 
 die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 
@@ -36,10 +44,18 @@ echo "Installing packages (fast if nothing changed)..."
 (cd backend && npm install --no-audit --no-fund --loglevel=error)
 (cd dashboard && npm install --no-audit --no-fund --loglevel=error)
 
+if (( PROD )); then
+  echo "Building the dashboard (about a minute)..."
+  (cd dashboard && npm run --silent build 2>&1 | sed -u 's/^/[build] /') || die "Dashboard build failed (see [build] lines above)."
+  RELAY_CMD=relay WEB_CMD=start
+else
+  RELAY_CMD=dev WEB_CMD=dev
+fi
+
 cleanup() { trap - EXIT INT TERM; echo; echo "Stopping..."; kill 0 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
-(cd backend && npm run --silent dev 2>&1 | sed -u 's/^/[relay] /') &
-(cd dashboard && npm run --silent dev 2>&1 | sed -u 's/^/[web]   /') &
+(cd backend && npm run --silent "$RELAY_CMD" 2>&1 | sed -u 's/^/[relay] /') &
+(cd dashboard && npm run --silent "$WEB_CMD" 2>&1 | sed -u 's/^/[web]   /') &
 if (( FAKE_DUCK )); then
   sleep 3
   (cd backend && npm run --silent duck 2>&1 | sed -u 's/^/[duck]  /') &
