@@ -15,6 +15,20 @@ Pi camera → rpicam-vid (MJPEG) → UDP over Wi-Fi → ffplay on laptop
 Leave both running; Ctrl+C stops either. Both must be on the same network.
 Find the laptop IP on macOS with `ipconfig getifaddr en0`.
 
+## Night vision
+Preview: `./stream.sh --night <laptop-ip>` (manual, because rpicam-vid can't auto-switch).
+`posture/run.py` and `sentry/run.py` switch **automatically** (`--light auto`, the default) using the camera's per-frame lux estimate. See `../shared/sources.py`.
+
+| Setting | Day | `--night` | Why |
+|---|---|---|---|
+| Frame rate | 30 fps | 15 fps | Each frame can expose for ~66 ms instead of ~33 ms: about 2× the light before gain (noise) goes up |
+| Colour | on | off (B&W) | IR light carries no colour, only a pink cast and colour noise |
+| Denoise | default | `cdn_hq` | Cleaner picture in the dark |
+
+**`--noir`**: night-vision boards often have **no IR filter**, so daylight colour comes out pink. `--noir` loads the sensor's `<model>_noir.json` tuning, if the camera software ships one for that model. Camera Module 3 NoIR boards report themselves as `*_noir` and get the right tuning automatically. Cheap OV5647 night-vision boards report plain `ov5647` and need the flag.
+
+**IR LEDs** on these boards usually switch on by themselves (a light sensor on the board), so there's nothing to control in software. To check, cover the light sensor and look for a faint red glow on the LEDs. Find the sensor model with `rpicam-hello --list-cameras`.
+
 ## Why these settings
 | Before | After |
 |---|---|

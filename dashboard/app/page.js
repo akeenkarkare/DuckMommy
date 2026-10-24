@@ -7,6 +7,7 @@ import { useRelay } from '@/lib/useRelay';
 import SlouchChart from '@/components/SlouchChart';
 import SettingsPanel from '@/components/SettingsPanel';
 import EventLog from '@/components/EventLog';
+import SignCard from '@/components/SignCard';
 
 function useNow(ms) {
   const [now, setNow] = useState(() => Date.now());
@@ -95,6 +96,7 @@ export default function Dashboard() {
         </div>
 
         <div className="stack">
+          <SignCard events={recent} />
           <div className="card">
             <h2>Talk to the duck</h2>
             <form className="row" onSubmit={(e) => {

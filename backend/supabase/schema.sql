@@ -56,6 +56,8 @@ create table public.settings (
   -- Feature toggles
   sentry_enabled   boolean not null default false,
   quack_enabled    boolean not null default true,
+  sign_enabled         boolean not null default true,   -- Sign to Duck (ASL -> speech)
+  sound_alerts_enabled boolean not null default true,   -- doorbell/phone/alarm -> LED
 
   updated_at       timestamptz not null default now()
 );

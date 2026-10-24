@@ -1,7 +1,7 @@
 // Fake duck: stands in for the Pi until the real sensors are wired up.
 // Speaks the same protocol as the Pi will: auth with DUCK_TOKEN, send events, obey settings/commands.
 // Reactions (TTS, quack) are printed instead of played.
-//
+// 
 //   npm run duck        realistic pacing
 //   npm run duck:fast   4x speed, for demos/testing
 
@@ -18,8 +18,14 @@ const TICK_MS = 1000 / SPEED; // one tick = one simulated second
 let settings = {
   volume: 70, posture_message: 'Sit up straight!', sentry_message: 'Who goes there?',
   presence_message: 'Welcome back!', posture_severity: 50, posture_delay_s: 5,
-  sentry_enabled: false, quack_enabled: true,
+  sentry_enabled: false, quack_enabled: true, sign_enabled: true, sound_alerts_enabled: true,
 };
+
+const SIGN_PHRASES = [['hello'], ['I love you'], ['yes'], ['no'], ['hello', 'you'], ['D', 'U', 'C', 'K']];
+const SOUNDS = [
+  ['doorbell', 'Doorbell'], ['doorbell', 'Knock'], ['phone', 'Ringtone'],
+  ['notification', 'Beep, bleep'], ['alarm', 'Smoke detector, smoke alarm'], ['calling', 'Shout'],
+];
 
 const rand = (min, max) => min + Math.random() * (max - min);
 const randInt = (min, max) => Math.round(rand(min, max));
@@ -131,6 +137,22 @@ function tickPresent() {
   }
 
   if (chance(1 / 400)) emit('focus', { source: 'nfc', action: 'tap' });
+
+  // Sign to Duck: letters join into a word, words join with spaces (same as pi/sign/signs.py)
+  if (settings.sign_enabled && chance(1 / 90)) {
+    const signs = SIGN_PHRASES[randInt(0, SIGN_PHRASES.length - 1)];
+    const text = signs.every((s) => s.length === 1) ? signs.join('').toLowerCase() : signs.join(' ');
+    emit('sign', { text, signs });
+    speak(text);
+  }
+}
+
+// Microphone: doorbells, phones, alarms -> LED. Runs whether or not anyone's at the desk.
+function tickSounds() {
+  if (!settings.sound_alerts_enabled || !chance(1 / 150)) return;
+  const [kind, label] = SOUNDS[randInt(0, SOUNDS.length - 1)];
+  emit('sound', { kind, label, score: round1(rand(0.45, 0.95)) });
+  log(`💡 LED: ${kind} pattern`);
 }
 
 function tickAway() {
@@ -146,12 +168,15 @@ function tickAway() {
     distance_cm: randInt(80, 220),
     person_confirmed: person,
     confidence: round1(person ? rand(0.7, 0.97) : rand(0.1, 0.45)),
+    night: Math.random() < 0.5,
+    trigger: 'ultrasonic',
   });
   if (person) speak(settings.sentry_message);
 }
 
 setInterval(() => {
   stateLeft -= 1;
+  tickSounds();
   if (stateLeft <= 0) (present ? leave : arrive)();
   else if (present) tickPresent();
   else tickAway();

@@ -52,7 +52,8 @@ The first message on any socket is auth. Otherwise the socket is closed (4001 = 
 - Relay → duck: `{type:"auth_ok"}`, `{type:"settings", settings:{...}}`, `{type:"command", command:{type:"say", text} | {type:"quack"}}`
 - Dashboard → relay: `{type:"auth", role:"dashboard", access_token}`, `{type:"settings_changed"}`, `{type:"command", command}`
 - Relay → dashboard: `{type:"auth_ok", user_id}`, `{type:"buffer", events}`, `{type:"event", event}`, `{type:"status", duck_connected, with_you}`, `{type:"command_ack", ok}`
-- Fake `value` payloads (until the real sensors exist): posture `{state:"slouch"|"upright", neck_angle_deg, slouch_duration_s}`, pat `{touch_ms}`, presence `{present, distance_cm}`, sentry `{distance_cm, person_confirmed, confidence}`, focus `{source:"nfc", action:"tap"}`.
+- Fake `value` payloads (until the real sensors exist): posture `{state:"slouch"|"upright", neck_angle_deg, slouch_duration_s}`, pat `{touch_ms}`, presence `{present, distance_cm}`, sentry `{distance_cm, person_confirmed, confidence, night, trigger}` (real code: `pi/sentry/watch.py`), focus `{source:"nfc", action:"tap"}`, sign `{text, signs}` (`pi/sign/signs.py`), sound `{kind: doorbell|phone|alarm|notification|calling, label, score}` (`pi/sounds/alerts.py`).
+- **TTS proxy:** `POST /tts {text}` with `Authorization: Bearer DUCK_TOKEN` returns raw 16-bit mono PCM @ 22050 Hz from ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, optional `ELEVENLABS_MODEL_ID` in `.env`). `/health` shows `tts: true` once configured. `npm run make-quack` makes `assets/quack.wav`.
 - Settings reach the duck by two paths: Supabase Realtime and the dashboard's `settings_changed` ping. Duplicate pushes are harmless.
 
 ## Settings (per user, edited on the dashboard)

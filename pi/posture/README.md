@@ -24,6 +24,8 @@ pip install mediapipe                          # Linux ARM64 wheel exists (1.1.1
 
 Only one process can use the Pi camera, so stop `camera/stream.sh` first.
 Tuning flags: `--severity 0..100` (default 50), `--delay <s>` (default 5).
+Camera flags: `--light auto|day|night` (default auto: night vision switches on by itself in the dark)
+and `--noir` (no-IR-filter camera: load the NoIR tuning). Details are in `../camera/README.md`. Flags the sensor doesn't support are skipped with a warning.
 
 Events print to stdout as JSON lines in the relay's wire format, ready for the
 uplink client. The speak line goes to `espeak-ng`/`espeak` (Pi) or `say` (Mac)

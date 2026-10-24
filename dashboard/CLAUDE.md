@@ -17,6 +17,7 @@ Web frontend. Each logged-in user sees and controls only their own duck. Root ru
    - **Event log:** newest first, every event type
    - **Duck status:** shows whether the duck is connected and with this user. If another user logs in, the duck moves to them and this page shows that.
    - **Settings:** volume, spoken messages (TTS on the duck), posture severity + delay (placeholder), sentry/quack toggles. Saved to Supabase on change, and the relay pushes them to the duck.
+   - **Sign to Duck card:** latest ASL translations, in large text
    - **Test controls:** e.g. a "say it now" button, sent through the relay to the duck
 4. Not in scope: the live camera feed (video stays on the Pi).
 

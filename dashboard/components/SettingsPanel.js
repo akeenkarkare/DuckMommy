@@ -3,8 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const FIELDS = 'volume, posture_message, sentry_message, presence_message, posture_severity, posture_delay_s, sentry_enabled, quack_enabled';
-
 // Saves to Supabase on change (RLS: own row only), then pings the relay to push to the duck.
 export default function SettingsPanel({ userId, onSaved }) {
   const [settings, setSettings] = useState(null);
@@ -13,7 +11,7 @@ export default function SettingsPanel({ userId, onSaved }) {
   const pending = useRef({});
 
   useEffect(() => {
-    supabase.from('settings').select(FIELDS).eq('user_id', userId).single()
+    supabase.from('settings').select('*').eq('user_id', userId).single()
       .then(({ data, error }) => (error ? setState(error.message) : setSettings(data)));
     return () => clearTimeout(timer.current);
   }, [userId]);
@@ -77,12 +75,26 @@ export default function SettingsPanel({ userId, onSaved }) {
 
       <label className="check">
         <input type="checkbox" checked={settings.quack_enabled} onChange={(e) => change('quack_enabled', e.target.checked, 0)} />
-        Quack when patted
+        Quack when its head is pressed
       </label>
       <label className="check">
         <input type="checkbox" checked={settings.sentry_enabled} onChange={(e) => change('sentry_enabled', e.target.checked, 0)} />
         Sentry mode while you're away
       </label>
+      {'sign_enabled' in settings && (
+        <label className="check">
+          <input type="checkbox" checked={settings.sign_enabled} onChange={(e) => change('sign_enabled', e.target.checked, 0)} />
+          Sign to Duck (reads ASL signs aloud)
+        </label>
+      )}
+      {'sound_alerts_enabled' in settings ? (
+        <label className="check">
+          <input type="checkbox" checked={settings.sound_alerts_enabled} onChange={(e) => change('sound_alerts_enabled', e.target.checked, 0)} />
+          Flash the LED for doorbells, phones and alarms
+        </label>
+      ) : (
+        <p className="hint">Run backend/supabase/migrations/002_sign_and_sound.sql to get the Sign to Duck and sound alert toggles.</p>
+      )}
     </div>
   );
 }

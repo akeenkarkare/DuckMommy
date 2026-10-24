@@ -10,7 +10,9 @@ import { timingSafeEqual } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { createClient } from '@supabase/supabase-js';
 
-const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN } = process.env;
+const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID } = process.env;
+const ELEVENLABS_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_flash_v2_5';
+const TTS_SAMPLE_RATE = 22050;
 const PORT = Number(process.env.RELAY_PORT ?? 8080);
 for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN })) {
   if (!v) throw new Error(`Missing ${k} in backend/.env`);
@@ -19,10 +21,11 @@ for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TO
 const BUFFER_MS = 5 * 60 * 1000;
 const AUTH_TIMEOUT_MS = 5000;
 const HEARTBEAT_MS = 15000;
-const EVENT_TYPES = new Set(['posture', 'pat', 'sentry', 'focus', 'presence']);
+const EVENT_TYPES = new Set(['posture', 'pat', 'sentry', 'focus', 'presence', 'sign', 'sound']);
 const SETTINGS_FIELDS = [
   'volume', 'posture_message', 'sentry_message', 'presence_message',
   'posture_severity', 'posture_delay_s', 'sentry_enabled', 'quack_enabled',
+  'sign_enabled', 'sound_alerts_enabled',
 ];
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
@@ -172,10 +175,52 @@ function handleDashboard(ws, msg) {
 }
 
 // ─── server ──────────────────────────────────────────────────────────────────
+// ─── TTS proxy: the duck posts text, we return ElevenLabs audio ─────────────
+// Keeps the API key on the laptop and works when the Pi has no internet of its own.
+// Response: raw 16-bit little-endian mono PCM at TTS_SAMPLE_RATE.
+async function handleTts(req, res) {
+  const auth = String(req.headers.authorization ?? '');
+  if (!tokenMatches(auth.replace(/^Bearer /, ''))) return res.writeHead(401).end();
+  if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) return res.writeHead(503).end('ElevenLabs not configured');
+
+  let body = '';
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > 4096) return res.writeHead(413).end();
+  }
+  let text;
+  try { text = String(JSON.parse(body).text ?? '').trim().slice(0, 300); } catch { return res.writeHead(400).end(); }
+  if (!text) return res.writeHead(400).end();
+
+  try {
+    const r = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(ELEVENLABS_VOICE_ID)}?output_format=pcm_${TTS_SAMPLE_RATE}`,
+      {
+        method: 'POST',
+        headers: { 'xi-api-key': ELEVENLABS_API_KEY, 'content-type': 'application/json' },
+        body: JSON.stringify({ text, model_id: ELEVENLABS_MODEL_ID }),
+        signal: AbortSignal.timeout(15000),
+      },
+    );
+    if (!r.ok) {
+      log('tts failed', r.status, (await r.text()).slice(0, 200));
+      return res.writeHead(502).end();
+    }
+    const audio = Buffer.from(await r.arrayBuffer());
+    res.writeHead(200, { 'content-type': `audio/L16; rate=${TTS_SAMPLE_RATE}; channels=1`, 'x-sample-rate': TTS_SAMPLE_RATE });
+    res.end(audio);
+    log(`tts ${audio.length} bytes: "${text.slice(0, 40)}"`);
+  } catch (e) {
+    log('tts error', e.message);
+    res.writeHead(504).end();
+  }
+}
+
 const server = createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/tts') return void handleTts(req, res);
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length }));
+    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID) }));
   }
   res.writeHead(404).end();
 });

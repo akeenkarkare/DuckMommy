@@ -6,7 +6,8 @@
     "relay": "node --env-file=.env src/relay.js",
     "dev": "node --env-file=.env --watch src/relay.js",
     "duck": "node --env-file=.env sim/fake-duck.js",
-    "duck:fast": "node --env-file=.env sim/fake-duck.js --fast"
+    "duck:fast": "node --env-file=.env sim/fake-duck.js --fast",
+    "make-quack": "node --env-file=.env scripts/make-quack.js"
   },
   "engines": {
     "node": ">=20.6"

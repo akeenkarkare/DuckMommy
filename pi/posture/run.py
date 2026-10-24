@@ -5,6 +5,8 @@
   Pi + tuning view on the laptop (run ../camera/view.sh there first):
                    python3 run.py --preview <laptop-ip>:5000
 
+Night vision is automatic (--light auto, see ../shared/sources.py).
+
 Events are printed as JSON lines in the relay's wire format, one per line:
   {"type": "event", "event": {"type": "posture", "value": {...}, "ts": ...}}
 so the uplink client can forward them as-is.
@@ -13,15 +15,17 @@ so the uplink client can forward them as-is.
 from __future__ import annotations
 
 import argparse
-import json
 import math
-import shutil
 import socket
-import subprocess
 import sys
 import time
+from pathlib import Path
 
-from judge import PostureJudge, pick_side
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # pi/ for shared/
+
+from judge import PostureJudge, pick_side   # noqa: E402
+from shared.out import TTS, emit, speak     # noqa: E402
+from shared.sources import open_source      # noqa: E402
 
 # Same defaults as the schema / fake duck until the relay pushes real settings.
 DEFAULT_SETTINGS = {
@@ -30,60 +34,6 @@ DEFAULT_SETTINGS = {
     "posture_message": "Sit up straight!",
     "volume": 70,
 }
-
-
-# ── frame sources (all return RGB numpy arrays) ────────────────────────────
-class PiCamera:
-    def __init__(self, width=640, height=480):
-        from picamera2 import Picamera2   # apt: python3-picamera2
-        self.cam = Picamera2()
-        # Picamera2 quirk: "BGR888" yields arrays in RGB order, which is what MediaPipe wants.
-        self.cam.configure(self.cam.create_preview_configuration(
-            main={"size": (width, height), "format": "BGR888"}))
-        self.cam.start()
-
-    def read(self):
-        return self.cam.capture_array("main")
-
-    def close(self):
-        self.cam.stop()
-
-
-class OpenCVCamera:
-    """Laptop webcam (index) or a stream/file URL, for testing without the Pi."""
-
-    def __init__(self, source):
-        import cv2
-        self.cv2 = cv2
-        self.cap = cv2.VideoCapture(int(source) if str(source).isdigit() else source)
-        if not self.cap.isOpened():
-            raise SystemExit(f"cannot open video source {source!r}")
-
-    def read(self):
-        ok, bgr = self.cap.read()
-        return self.cv2.cvtColor(bgr, self.cv2.COLOR_BGR2RGB) if ok else None
-
-    def close(self):
-        self.cap.release()
-
-
-# ── reactions ──────────────────────────────────────────────────────────────
-TTS = next((c for c in ("espeak-ng", "espeak", "say") if shutil.which(c)), None)
-_speaking = None
-
-
-def speak(text: str):
-    """Non-blocking TTS with whatever's installed; never stalls the camera loop."""
-    global _speaking
-    print(f"# speak: {text}", file=sys.stderr)
-    if not TTS or (_speaking and _speaking.poll() is None):
-        return
-    _speaking = subprocess.Popen([TTS, text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-def emit(etype: str, value: dict):
-    msg = {"type": "event", "event": {"type": etype, "value": value, "ts": int(time.time() * 1000)}}
-    print(json.dumps(msg), flush=True)
 
 
 # ── debug overlay (tuning only; video never goes to the relay) ─────────────
@@ -144,6 +94,8 @@ def main():
     ap.add_argument("--preview", metavar="HOST:PORT", help="send annotated MJPEG over UDP to ../camera/view.sh")
     ap.add_argument("--severity", type=int, help="override posture_severity (0-100)")
     ap.add_argument("--delay", type=int, help="override posture_delay_s")
+    ap.add_argument("--light", choices=["auto", "day", "night"], default="auto", help="Pi camera night vision mode (default auto)")
+    ap.add_argument("--noir", action="store_true", help="Pi camera has no IR filter: load the sensor's NoIR tuning")
     args = ap.parse_args()
 
     settings = dict(DEFAULT_SETTINGS)
@@ -154,7 +106,7 @@ def main():
 
     from pose import PoseDetector
     detector = PoseDetector(args.model)
-    cam = PiCamera() if args.source == "pi" else OpenCVCamera(args.source)
+    cam = open_source(args.source, light=args.light, noir=args.noir)
     judge = PostureJudge(settings)
     overlay = Overlay(args.show, args.preview) if (args.show or args.preview) else None
     print(f"# posture running: source={args.source} tts={TTS or 'none (print only)'}", file=sys.stderr)

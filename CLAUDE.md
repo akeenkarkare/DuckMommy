@@ -3,7 +3,7 @@
 A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watches your posture with OpenCV, tells you out loud to sit up, guards your desk in sentry mode, quacks when you pat its head, and uses an NFC tag to trigger iOS focus/app-blocking. Every metric goes to a server, and a dashboard shows each logged-in user only their own data.
 
 ## Golden rules for Claude
-1. **Hardcode before AI.** Use OpenCV or simple logic wherever it works. Do not add LLM or vision-API calls unless a task explicitly asks for one.
+1. **Hardcode before AI.** Use OpenCV or simple logic wherever it works. Do not add LLM or vision-API calls unless a task explicitly asks for one. The one requested exception: **ElevenLabs** for the duck's voice, proxied by the relay (`POST /tts`) so the key stays on the laptop. Local models (MediaPipe pose/hands, YAMNet) are fine.
 2. **Per-user isolation is non-negotiable.** Every DB query filters by the `user_id` from the authenticated session. Never take it from the request body or query params.
 3. **Never commit secrets.** API keys and DB URIs live in `.env` only. `.env` is gitignored, and `.env.example` lists the variable names.
 4. **Ask before adding a dependency.** This is especially important on the Pi, because installs there are slow and can break the camera stack.
@@ -15,19 +15,23 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 |---|---|---|
 | Raspberry Pi 5 (8GB) | Main brain: OpenCV, audio, server uplink | — |
 | Pi camera (wide-angle, night vision) | Posture + person detection | Pi CSI port |
-| Ultrasonic sensor | Motion/presence for sentry mode |
-| Touch sensor | Head pat → quack. Sensor sits under the shell, with a conductive wire up through the top |
+| Ultrasonic sensor | Presence at the desk + sentry wake-up | GPIO `ULTRASONIC_TRIG/ECHO` (TODO: confirm pins) |
+| Pressure sensor (digital out, e.g. FSR + comparator module) | Head press → quack | GPIO `PRESS_PIN` (TODO: confirm part + pin) |
+| Alert LED | Flashes for doorbell / phone / alarm / notification / someone calling | GPIO `LED_PIN` (TODO: confirm pin) |
 | Speakers | Voice prompts + quack |
-| USB microphone | Voice commands |
+| USB microphone | Sound alerts (doorbell, phone, alarms) | USB, `MIC_DEVICE` |
 | NFC sticker | Phone tap → iOS Shortcut (no reader hardware; it's a passive tag) | On beak/back |
 
 ## Features — scope
 **In scope (demo-critical, in priority order):**
 1. **Posture detection.** OpenCV plus the pose library. When a slouch persists for N seconds, the duck plays a spoken prompt to sit up and logs a `posture` event.
-2. **Pat to quack.** Touch triggers a quack sound and logs a `pat` event.
+2. **Press to quack.** The pressure sensor triggers a quack (`assets/quack.wav`, made with ElevenLabs sound effects) and logs a `pat` event.
 3. **Dashboard.** Login, then a posture-over-time graph for that user only. Start basic and add the duck theme last.
 4. **NFC focus tag.** Tapping the tag opens iOS Shortcuts, where the user picks what to block (like a Brick device). Goal: judges should NOT have to build a Shortcut by hand.
 5. **Sentry mode.** The ultrasonic sensor detects motion, then the camera confirms a person with OpenCV (works in night vision) and logs a `sentry` event.
+6. **Voice.** ElevenLabs in the duck's own voice; the dashboard sets what it says.
+7. **Sign to Duck.** The user signs ASL handshapes at the camera and the duck speaks them (MediaPipe hands, no API) and logs a `sign` event.
+8. **Sound alerts.** The mic hears a doorbell, phone, alarm, notification or someone calling, flashes the LED in a pattern per sound, and logs a `sound` event.
 
 **Out of scope until 1–5 work:**
 - LLM object analysis ("show the duck a tool and ask what it does"). It needs an always-on API plus clip capture. If you build it later, make it on-demand only: a trigger captures a 5-second clip, which goes to the API.
@@ -48,8 +52,8 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 - **Network:** for the demo, the Pi is connected directly to the laptop running the relay.
 - **One duck:** there is exactly one duck and no device management. The Pi authenticates to the relay with a shared `DUCK_TOKEN` from `.env`. The relay sends the duck's events to the **active user** and pushes that user's settings to the duck (see `/backend/CLAUDE.md`).
 - **Event shape:**
-  `{ user_id, type: "posture"|"pat"|"sentry"|"focus"|"presence", value, ts }`
-  `presence` is the ultrasonic arrive/leave signal that turns the camera on or off. The `posture` payload is TBD until the posture code lands.
+  `{ user_id, type: "posture"|"pat"|"sentry"|"focus"|"presence"|"sign"|"sound", value, ts }`
+  `presence` is the ultrasonic arrive/leave signal that turns the camera on or off. Payloads are listed in `/backend/CLAUDE.md`.
 - The Pi reconnects automatically if the WebSocket drops and sends any events it queued in the meantime. Its reactions (quack, sit-up prompt) keep working with no connection. **The duck must keep working during the demo.**
 
 ## Repo layout
@@ -62,7 +66,8 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 Each folder may get its own short CLAUDE.md with run/test commands. Keep this root file about the whole project.
 
 ## Commands (TODO: fill in as they exist)
-- Pi: `TODO` (until then, `cd backend && npm run duck` simulates it)
+- Pi: `cd pi && python3 duck.py` (setup in `pi/README.md`; `cd backend && npm run duck` simulates it)
+- Sentry: `cd pi/sentry && python3 run.py --trig <BCM> --echo <BCM>` (or `--no-ultrasonic`). Night vision is automatic. See `pi/sentry/README.md`.
 - Camera preview (dev only): laptop `pi/camera/view.sh`, then Pi `pi/camera/stream.sh <laptop-ip>`. See `pi/camera/README.md`.
 - Backend: `cd backend && npm run dev`
 - Dashboard: `cd dashboard && npm run dev` → http://localhost:3000
