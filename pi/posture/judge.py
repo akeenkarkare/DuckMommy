@@ -25,9 +25,9 @@ MIN_VISIBILITY = 0.5         # ignore landmarks the pose model isn't sure about
 MIN_HIP_VISIBILITY = 0.5     # below this, assume the desk hides the hip and use vertical instead
 EMA_ALPHA = 0.3              # smoothing per frame (higher = snappier, noisier)
 
-# severity 0 -> 45 deg, 50 -> 30 deg, 100 -> 15 deg (side-view neck inclination)
-LENIENT_DEG = 45.0
-STRICT_DEG = 15.0
+# severity 0 -> 55 deg, 50 -> 40 deg, 100 -> 25 deg (side-view neck inclination)
+LENIENT_DEG = 55.0
+STRICT_DEG = 25.0
 
 
 def threshold_deg(severity: float) -> float:

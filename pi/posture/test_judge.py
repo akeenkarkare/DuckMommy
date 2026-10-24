@@ -64,26 +64,26 @@ class Geometry(unittest.TestCase):
         self.assertAlmostEqual(neck_angle_deg(b["left_ear"], b["left_shoulder"], b["left_hip"]), 35, places=5)
 
     def test_severity_mapping(self):
-        self.assertEqual(threshold_deg(0), 45)
-        self.assertEqual(threshold_deg(50), 30)
-        self.assertEqual(threshold_deg(100), 15)
-        self.assertEqual(threshold_deg(500), 15)
+        self.assertEqual(threshold_deg(0), 55)
+        self.assertEqual(threshold_deg(50), 40)
+        self.assertEqual(threshold_deg(100), 25)
+        self.assertEqual(threshold_deg(500), 25)
 
 
 class Timing(unittest.TestCase):
     def test_upright_never_fires(self):
-        _, acts = run(PostureJudge(dict(SETTINGS)), 0, 60, pose(10))
+        _, acts = run(PostureJudge(dict(SETTINGS)), 0, 60, pose(30))   # Akeen's real upright reading
         self.assertEqual(acts, [])
 
     def test_short_slouch_is_silent(self):
         j = PostureJudge(dict(SETTINGS))
-        t, a1 = run(j, 0, 3, pose(40))
+        t, a1 = run(j, 0, 3, pose(50))
         _, a2 = run(j, t, 3, pose(10))
         self.assertEqual(a1 + a2, [])
 
     def test_slouch_prompts_after_delay_then_reminds(self):
         j = PostureJudge(dict(SETTINGS))
-        _, acts = run(j, 0, 40, pose(40))
+        _, acts = run(j, 0, 40, pose(50))
         evs = events(acts)
         self.assertEqual(len(evs), 2)                     # first prompt + one 30 s reminder
         self.assertEqual(evs[0]["state"], "slouch")
@@ -92,7 +92,7 @@ class Timing(unittest.TestCase):
 
     def test_upright_event_after_prompted_slouch(self):
         j = PostureJudge(dict(SETTINGS))
-        t, _ = run(j, 0, 8, pose(40))
+        t, _ = run(j, 0, 8, pose(50))
         _, acts = run(j, t, 3, pose(5))
         evs = events(acts)
         self.assertEqual([e["state"] for e in evs], ["upright"])
@@ -100,13 +100,13 @@ class Timing(unittest.TestCase):
 
     def test_hysteresis_ignores_jitter_near_threshold(self):
         j = PostureJudge(dict(SETTINGS))
-        t, _ = run(j, 0, 8, pose(35))
-        _, acts = run(j, t, 5, pose(28))                  # below 30, above 25: still slouching
+        t, _ = run(j, 0, 8, pose(45))
+        _, acts = run(j, t, 5, pose(37))                  # below 40, above 35: still slouching
         self.assertEqual([e for e in events(acts) if e["state"] == "upright"], [])
 
     def test_lost_tracking_ends_slouch(self):
         j = PostureJudge(dict(SETTINGS))
-        t, _ = run(j, 0, 8, pose(40))
+        t, _ = run(j, 0, 8, pose(50))
         _, acts = run(j, t, 3, None)
         self.assertEqual([e["state"] for e in events(acts)], ["upright"])
 
@@ -115,33 +115,33 @@ class Timing(unittest.TestCase):
         self.assertEqual(acts, [])
 
     def test_uses_whichever_side_is_visible(self):
-        _, acts = run(PostureJudge(dict(SETTINGS)), 0, 8, pose(40, side="right"))
+        _, acts = run(PostureJudge(dict(SETTINGS)), 0, 8, pose(50, side="right"))
         self.assertEqual(len(events(acts)), 1)
 
     def test_settings_are_live(self):
         s = dict(SETTINGS)
         j = PostureJudge(s)
-        s["posture_severity"] = 0                         # 45 deg threshold: 40 no longer counts
-        _, acts = run(j, 0, 10, pose(40))
+        s["posture_severity"] = 0                         # 55 deg threshold: 50 no longer counts
+        _, acts = run(j, 0, 10, pose(50))
         self.assertEqual(acts, [])
 
     def test_leaning_forward_straight_is_not_a_slouch(self):
-        _, acts = run(PostureJudge(dict(SETTINGS)), 0, 20, body(40, 40))
+        _, acts = run(PostureJudge(dict(SETTINGS)), 0, 20, body(50, 50))
         self.assertEqual(acts, [])
 
     def test_head_jut_with_hip_is_a_slouch(self):
-        _, acts = run(PostureJudge(dict(SETTINGS)), 0, 8, body(10, 50))
+        _, acts = run(PostureJudge(dict(SETTINGS)), 0, 8, body(5, 55))
         self.assertEqual([e["state"] for e in events(acts)], ["slouch"])
 
     def test_hidden_hip_falls_back_to_vertical(self):
         j = PostureJudge(dict(SETTINGS))
-        _, acts = run(j, 0, 8, body(40, 40, hip_vis=0.1))   # no hip -> 40 vs vertical counts
+        _, acts = run(j, 0, 8, body(50, 50, hip_vis=0.1))   # no hip -> 50 vs vertical counts
         self.assertFalse(j.using_hip)
         self.assertEqual(len(events(acts)), 1)
 
     def test_reset_on_leave(self):
         j = PostureJudge(dict(SETTINGS))
-        run(j, 0, 8, pose(40))
+        run(j, 0, 8, pose(50))
         self.assertEqual([e["state"] for e in events(j.reset())], ["upright"])
 
 

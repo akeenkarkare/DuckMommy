@@ -37,7 +37,7 @@ if installed, and is printed otherwise.
 - **No hip visible** (desk in the way): falls back to shoulder→ear vs.
   vertical, which *can't* tell a straight lean from a slouch. The overlay
   says `vs vertical (no hip)`. Frame the camera so the hip is in view.
-- **Threshold** from `posture_severity`: 0 → 45°, 50 → 30°, 100 → 15°.
+- **Threshold** from `posture_severity`: 0 → 55°, 50 → 40°, 100 → 25°.
   Starting guesses; tune with the `--preview` view on real people.
 - Smoothed per frame, with 5° hysteresis so it doesn't flicker at the line.
 - Prompt after `posture_delay_s` of continuous slouch, remind every 30 s,
