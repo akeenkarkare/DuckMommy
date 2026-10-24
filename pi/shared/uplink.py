@@ -77,7 +77,13 @@ class Uplink:
         self._queue.append(msg)
 
     def _run(self):
-        from websockets.sync.client import connect
+        try:
+            from websockets.sync.client import connect
+        except ImportError:
+            log("the websockets package isn't installed, so the duck can't reach the relay (running offline). "
+                "Fix: source .venv/bin/activate && pip install websockets")
+            return
+        log(f"connecting to {self.url}")
         backoff = 1
         while True:
             try:
@@ -105,7 +111,12 @@ class Uplink:
                                 log(f"live view {'on' if on else 'off'}" + (f" ({self.video_fps} fps)" if on else ""))
                             self.video_on = on
             except Exception as e:
-                log(f"disconnected ({e.__class__.__name__}: {e}); retrying in {backoff}s")
+                hint = ""
+                if "4003" in str(e):
+                    hint = " (DUCK_TOKEN in pi/.env doesn't match backend/.env on the relay's machine)"
+                elif isinstance(e, (ConnectionRefusedError, TimeoutError, OSError)):
+                    hint = " (is the relay running, and is RELAY_URL's host/port reachable from the Pi?)"
+                log(f"disconnected ({e.__class__.__name__}: {e}){hint}; retrying in {backoff}s")
             with self._lock:
                 self._ws, self.connected = None, False
             self.video_on = False   # the relay re-sends it after reconnecting
