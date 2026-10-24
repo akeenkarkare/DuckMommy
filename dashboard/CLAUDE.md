@@ -19,6 +19,8 @@ Web frontend. Each logged-in user sees and controls only their own duck. Root ru
    - **Settings:** volume, spoken messages (TTS on the duck), posture severity + delay (placeholder), sentry/quack toggles. Saved to Supabase on change, and the relay pushes them to the duck.
    - **Sign to Duck card:** latest ASL translations, in large text
    - **Test controls:** e.g. a "say it now" button, sent through the relay to the duck
+   - **Focus & coach** panel (the duck's back): focus session buttons (sent as `command {type:"coach", name}`), what the duck said (`coach` events), coach on/off, check-in length, personality (gentle / coach / savage)
+   - **Calendar** panel: "Up next" from the relay's `agenda` message, feed errors, the calendar links field (`settings.calendar_urls`), refresh (`agenda_refresh`)
 4. Not in scope: the live camera feed (video stays on the Pi).
 
 ## Design: the 3D duck

@@ -3,7 +3,7 @@
 A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watches your posture with OpenCV, tells you out loud to sit up, guards your desk in sentry mode, quacks when you pat its head, and uses an NFC tag to trigger iOS focus/app-blocking. Every metric goes to a server, and a dashboard shows each logged-in user only their own data.
 
 ## Golden rules for Claude
-1. **Hardcode before AI.** Use OpenCV or simple logic wherever it works. Do not add LLM or vision-API calls unless a task explicitly asks for one. The one requested exception: **ElevenLabs** for the duck's voice, proxied by the relay (`POST /tts`) so the key stays on the laptop. Local models (MediaPipe pose/holistic, YAMNet) are fine.
+1. **Hardcode before AI.** Use OpenCV or simple logic wherever it works. Do not add LLM or vision-API calls unless a task explicitly asks for one. The requested exceptions: **ElevenLabs** for the duck's voice, proxied by the relay (`POST /tts`), and **Claude (Anthropic API)** for the lock-in coach's lines, proxied by the relay (`POST /nudge`). Both keys stay on the laptop, and the Pi falls back to espeak / templates when they're unavailable. Local models (MediaPipe pose/holistic, YAMNet) are fine.
 2. **Per-user isolation is non-negotiable.** Every DB query filters by the `user_id` from the authenticated session. Never take it from the request body or query params.
 3. **Never commit secrets.** API keys and DB URIs live in `.env` only. `.env` is gitignored, and `.env.example` lists the variable names.
 4. **Ask before adding a dependency.** This is especially important on the Pi, because installs there are slow and can break the camera stack.
@@ -32,6 +32,8 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 6. **Voice.** ElevenLabs in the duck's own voice; the dashboard sets what it says.
 7. **Sign to Duck.** The user signs ASL word signs at the camera; the duck speaks the phrase (MediaPipe Holistic + DTW templates, no API) and logs a `sign` event. Code: `pi/asl`.
 8. **Sound alerts.** The mic hears a doorbell, phone, alarm, notification or someone calling, flashes the LED in a pattern per sound, and logs a `sound` event.
+9. **Lock-in coach (Tomo-style).** Persuasive spoken nudges: an arrival brief of what's due, deadline reminders (24 h / 3 h / 1 h / 15 min), event heads-ups, periodic check-ins, a "zoned out?" nudge after 5 min with no movement (then marked away after 5 more), and focus sessions from the START FOCUS sign or the dashboard. Logs `coach` events. Code: `pi/coach`, `pi/motion`.
+10. **Calendar.** iCal feed links (Google Calendar secret address, Brightspace/Canvas) pasted on the dashboard; the relay fetches and parses them (`backend/src/ics.js`, no deps) and pushes the next week to the duck. The links never reach the Pi. Google sign-in is a possible later addition.
 
 **Out of scope until 1–5 work:**
 - LLM object analysis ("show the duck a tool and ask what it does"). It needs an always-on API plus clip capture. If you build it later, make it on-demand only: a trigger captures a 5-second clip, which goes to the API.
@@ -52,7 +54,7 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 - **Network:** for the demo, the Pi is connected directly to the laptop running the relay.
 - **One duck:** there is exactly one duck and no device management. The Pi authenticates to the relay with a shared `DUCK_TOKEN` from `.env`. The relay sends the duck's events to the **active user** and pushes that user's settings to the duck (see `/backend/CLAUDE.md`).
 - **Event shape:**
-  `{ user_id, type: "posture"|"pat"|"sentry"|"focus"|"presence"|"sign"|"sound", value, ts }`
+  `{ user_id, type: "posture"|"pat"|"sentry"|"focus"|"presence"|"sign"|"sound"|"coach", value, ts }`
   `presence` is the ultrasonic arrive/leave signal that turns the camera on or off. Payloads are listed in `/backend/CLAUDE.md`.
 - The Pi reconnects automatically if the WebSocket drops and sends any events it queued in the meantime. Its reactions (quack, sit-up prompt) keep working with no connection. **The duck must keep working during the demo.**
 
@@ -70,7 +72,9 @@ Each folder may get its own short CLAUDE.md with run/test commands. Keep this ro
 - Sign to Duck data + training: see `pi/asl/README.md` (`duck.py` loads the model).
 - Sentry: `cd pi/sentry && python3 run.py --trig <BCM> --echo <BCM>` (or `--no-ultrasonic`). Night vision is automatic. See `pi/sentry/README.md`.
 - Camera preview (dev only): laptop `pi/camera/view.sh`, then Pi `pi/camera/stream.sh <laptop-ip>`. See `pi/camera/README.md`.
-- Backend: `cd backend && npm run dev`
+- Backend: `cd backend && npm run dev` · tests: `npm test`
+- Supabase: run `backend/supabase/migrations/003_coach_and_calendar.sql` once for the coach + calendar settings.
+- Camera won't start: `cd pi && ./doctor.sh`
 - Dashboard: `cd dashboard && npm run dev` → http://localhost:3000
 
 ## Definition of done for the demo

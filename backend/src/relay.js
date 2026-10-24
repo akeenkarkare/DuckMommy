@@ -9,9 +9,12 @@ import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { createClient } from '@supabase/supabase-js';
+import { buildAgenda, feedUrls } from './calendar.js';
+import { writeNudge } from './nudge.js';
 
-const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID } = process.env;
+const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, ANTHROPIC_API_KEY } = process.env;
 const ELEVENLABS_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_flash_v2_5';
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
 const TTS_SAMPLE_RATE = 22050;
 const PORT = Number(process.env.RELAY_PORT ?? 8080);
 for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN })) {
@@ -21,12 +24,16 @@ for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TO
 const BUFFER_MS = 5 * 60 * 1000;
 const AUTH_TIMEOUT_MS = 5000;
 const HEARTBEAT_MS = 15000;
-const EVENT_TYPES = new Set(['posture', 'pat', 'sentry', 'focus', 'presence', 'sign', 'sound']);
+const EVENT_TYPES = new Set(['posture', 'pat', 'sentry', 'focus', 'presence', 'sign', 'sound', 'coach']);
+// Pushed to the Pi. calendar_urls is deliberately NOT here: the links are secret and only the relay fetches them.
 const SETTINGS_FIELDS = [
   'volume', 'posture_message', 'sentry_message', 'presence_message',
   'posture_severity', 'posture_delay_s', 'sentry_enabled', 'quack_enabled',
   'sign_enabled', 'sound_alerts_enabled',
+  'coach_enabled', 'coach_interval_min', 'coach_tone',
 ];
+const COACH_COMMANDS = new Set(['start_focus', 'break', 'finish', 'time_left', 'more_time']);
+const AGENDA_REFRESH_MS = 10 * 60 * 1000;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -35,7 +42,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
 let duck = null;            // the one duck's socket
 let activeUserId = null;    // who the duck belongs to right now
 let activeSettings = null;  // that user's settings row
+let activeName = null;      // their display name, for the coach's lines
 const buffers = new Map();  // user_id -> events from the last 5 min
+const agendas = new Map();  // user_id -> { key, items, errors, feeds, fetched_at }
 
 const log = (...args) => console.log(new Date().toISOString().slice(11, 19), ...args);
 const send = (ws, msg) => ws?.readyState === 1 && ws.send(JSON.stringify(msg));
@@ -77,6 +86,7 @@ async function loadSettings(userId) {
   if (userId !== activeUserId) return; // active user changed while we waited
   activeSettings = data;
   pushSettings();
+  refreshAgenda(userId, data.calendar_urls);
 }
 
 async function setActiveUser(userId) {
@@ -84,10 +94,47 @@ async function setActiveUser(userId) {
   activeUserId = userId;
   if (changed) {
     activeSettings = null;
+    activeName = null;
     log('duck is now with', userId);
+    supabase.from('profiles').select('display_name').eq('user_id', userId).single()
+      .then(({ data }) => { if (userId === activeUserId) activeName = data?.display_name ?? null; });
   }
   await loadSettings(userId);
 }
+
+// ─── agenda (calendar feeds) ─────────────────────────────────────────────────
+function sendAgenda(userId) {
+  const a = agendas.get(userId);
+  if (!a) return;
+  sendToUser(userId, { type: 'agenda', items: a.items, errors: a.errors, feeds: a.feeds, fetched_at: a.fetched_at });
+  if (userId === activeUserId) {
+    const items = a.items.map(({ id, title, kind, start, end, all_day }) => ({ id, title, kind, start, end, all_day }));
+    send(duck, { type: 'agenda', items });
+  }
+}
+
+const refreshing = new Set();
+async function refreshAgenda(userId, urlsText, { force = false } = {}) {
+  const key = feedUrls(urlsText).join('\n');
+  const cached = agendas.get(userId);
+  if (!force && cached && cached.key === key && Date.now() - cached.fetched_at < AGENDA_REFRESH_MS) {
+    return sendAgenda(userId);
+  }
+  if (refreshing.has(userId)) return;
+  refreshing.add(userId);
+  try {
+    const agenda = key ? await buildAgenda(key) : { items: [], errors: [], feeds: 0, fetched_at: Date.now() };
+    agendas.set(userId, { key, ...agenda });
+    if (key) log(`agenda for ${userId}: ${agenda.items.length} items from ${agenda.feeds} feed(s)${agenda.errors.length ? `, ${agenda.errors.length} error(s)` : ''}`);
+    sendAgenda(userId);
+  } finally {
+    refreshing.delete(userId);
+  }
+}
+
+setInterval(() => {
+  if (activeUserId && activeSettings) refreshAgenda(activeUserId, activeSettings.calendar_urls, { force: true });
+}, AGENDA_REFRESH_MS);
 
 // Backup path: dashboard writes settings to Supabase, Realtime tells us.
 supabase
@@ -96,6 +143,7 @@ supabase
     if (row.user_id !== activeUserId) return;
     activeSettings = row;
     pushSettings();
+    refreshAgenda(row.user_id, row.calendar_urls);
   })
   .subscribe((status) => log('realtime settings:', status));
 
@@ -117,6 +165,7 @@ async function handleAuth(ws, msg) {
     send(ws, { type: 'auth_ok' });
     log('duck connected');
     pushSettings();
+    if (activeUserId) sendAgenda(activeUserId);
     broadcastStatus();
     return;
   }
@@ -157,6 +206,12 @@ function handleDashboard(ws, msg) {
     return;
   }
 
+  if (msg.type === 'agenda_refresh') {   // "refresh" button: re-read this user's own links
+    supabase.from('settings').select('calendar_urls').eq('user_id', ws.userId).single()
+      .then(({ data }) => refreshAgenda(ws.userId, data?.calendar_urls, { force: true }));
+    return;
+  }
+
   if (msg.type === 'command') {
     const { command } = msg;
     let ok = isActive && !!duck;
@@ -166,6 +221,8 @@ function handleDashboard(ws, msg) {
       if (ok) send(duck, { type: 'command', command: { type: 'say', text } });
     } else if (ok && command?.type === 'quack') {
       send(duck, { type: 'command', command: { type: 'quack' } });
+    } else if (ok && command?.type === 'coach' && COACH_COMMANDS.has(command.name)) {
+      send(duck, { type: 'command', command: { type: 'coach', name: command.name } });
     } else {
       ok = false;
     }
@@ -216,11 +273,40 @@ async function handleTts(req, res) {
   }
 }
 
+// ─── coach lines: the duck posts {kind, tone, facts}, we return {text} from Claude ──
+// Same deal as /tts: the key stays here. 503 when not configured -> the Pi uses templates.
+async function handleNudge(req, res) {
+  const auth = String(req.headers.authorization ?? '');
+  if (!tokenMatches(auth.replace(/^Bearer /, ''))) return res.writeHead(401).end();
+  if (!ANTHROPIC_API_KEY) return res.writeHead(503).end('Anthropic not configured');
+  let body = '';
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > 8192) return res.writeHead(413).end();
+  }
+  let input;
+  try { input = JSON.parse(body); } catch { return res.writeHead(400).end(); }
+  try {
+    const text = await writeNudge({
+      apiKey: ANTHROPIC_API_KEY, model: ANTHROPIC_MODEL,
+      kind: input.kind, tone: input.tone, facts: input.facts, name: activeName,
+    });
+    if (!text) return res.writeHead(502).end();
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ text }));
+    log(`nudge ${input.kind}: "${text.slice(0, 60)}"`);
+  } catch (e) {
+    log('nudge failed', e.message);
+    res.writeHead(e.name === 'TimeoutError' ? 504 : 502).end();
+  }
+}
+
 const server = createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/tts') return void handleTts(req, res);
+  if (req.method === 'POST' && req.url === '/nudge') return void handleNudge(req, res);
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID) }));
+    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID), coach_ai: !!ANTHROPIC_API_KEY }));
   }
   res.writeHead(404).end();
 });

@@ -25,15 +25,28 @@ export function TextField({ s, k, label, optional }) {
   );
 }
 
-export function Toggle({ s, k, label, hint }) {
+export function Toggle({ s, k, label, hint, migration = '002_sign_and_sound.sql' }) {
   if (!s.settings) return null;
   if (!(k in s.settings)) {
-    return <p className="hint">Run backend/supabase/migrations/002_sign_and_sound.sql to enable “{label}”.</p>;
+    return <p className="hint">Run backend/supabase/migrations/{migration} to enable “{label}”.</p>;
   }
   return (
     <label className="switch">
       <span>{label}{hint && <><br /><span className="hint">{hint}</span></>}</span>
       <input type="checkbox" checked={!!s.settings[k]} onChange={(e) => s.change(k, e.target.checked, 0)} />
     </label>
+  );
+}
+
+export function SelectField({ s, k, label, options, hint }) {
+  if (!s.settings || !(k in s.settings)) return null;
+  return (
+    <div className="field">
+      <label htmlFor={k}>{label}</label>
+      <select id={k} className="input" value={s.settings[k] ?? ''} onChange={(e) => s.change(k, e.target.value, 0)}>
+        {options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+      </select>
+      {hint && <span className="hint">{hint}</span>}
+    </div>
   );
 }

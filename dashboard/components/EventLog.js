@@ -16,7 +16,9 @@ function describe({ type, value: v }) {
         ? `Slouching ${v.slouch_duration_s}s · neck ${v.neck_angle_deg}°`
         : `Sat up after ${v.slouch_duration_s}s · neck ${v.neck_angle_deg}°`;
     case 'pat': return `Head pat (${v.touch_ms} ms)`;
-    case 'presence': return v.present ? `Arrived · ${v.distance_cm} cm away` : 'Left the desk';
+    case 'presence':
+      if (v.present) return v.distance_cm != null ? `Arrived · ${v.distance_cm} cm away` : 'Arrived';
+      return v.reason === 'idle' ? 'Away · no movement for 10 min' : 'Left the desk';
     case 'sentry': {
       const where = [v.distance_cm != null && `${v.distance_cm} cm`, v.night && 'night vision'].filter(Boolean).join(' · ');
       return v.person_confirmed
@@ -26,6 +28,7 @@ function describe({ type, value: v }) {
     case 'focus': return 'NFC tag tapped';
     case 'sign': return `Signed: “${v.text}”`;
     case 'sound': return `${SOUND_LABELS[v.kind] ?? v.label} · ${Math.round(v.score * 100)}% sure · LED on`;
+    case 'coach': return `🦆 “${v.text}”${v.source === 'template' ? ' · offline line' : ''}`;
     default: return JSON.stringify(v);
   }
 }

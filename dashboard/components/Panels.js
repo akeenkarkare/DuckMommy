@@ -4,7 +4,7 @@ import { useState } from 'react';
 import SlouchChart from './SlouchChart';
 import SignCard from './SignCard';
 import EventLog from './EventLog';
-import { RangeField, TextField, Toggle } from './Controls';
+import { RangeField, SelectField, TextField, Toggle } from './Controls';
 
 const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 const ago = (ts, now) => {
@@ -158,19 +158,134 @@ function VoicePanel({ s, send, canCommand, duck, lastAck, now }) {
   );
 }
 
-function FocusPanel({ events, now }) {
+// The running focus session, from the duck's own coach events: {left} minutes, or null.
+export function focusSession(events, now) {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.type !== 'coach') continue;
+    if (['focus_done', 'finish', 'break_start', 'break_over'].includes(e.value?.kind)) return null;
+    if (e.value?.focus_minutes_left != null) {
+      const left = Math.round((e.ts + e.value.focus_minutes_left * 60000 - now) / 60000);
+      return left > 0 ? { left } : null;
+    }
+  }
+  return null;
+}
+
+const when = (ms, now, allDay) => {
+  const min = Math.round((ms - now) / 60000);
+  if (min < 0) return 'now';
+  if (allDay) return min < 24 * 60 ? 'today' : new Date(ms).toLocaleDateString([], { weekday: 'short' });
+  if (min < 60) return `in ${min} min`;
+  if (min < 24 * 60) return `in ${Math.round(min / 60)} h · ${new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  return new Date(ms).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+};
+
+const FOCUS_BUTTONS = [
+  ['start_focus', '🎯 Start focus', 'primary'], ['more_time', '+10 min'], ['time_left', 'Time left?'],
+  ['break', '☕ Break'], ['finish', '✓ Done'],
+];
+const TONES = [['gentle', 'Gentle: kind friend'], ['coach', 'Coach: direct, upbeat'], ['savage', 'Savage: roasts your procrastination']];
+
+function FocusPanel({ events, allEvents, now, s, send, canCommand, agenda }) {
   const taps = events.filter((e) => e.type === 'focus').slice(-6).reverse();
+  const lines = allEvents.filter((e) => e.type === 'coach').slice(-6).reverse();
+  const session = focusSession(allEvents, now);
+  const nextDue = agenda.items.find((i) => i.kind === 'due' && i.start > now);
+  const coach = (name) => send({ type: 'command', command: { type: 'coach', name } });
   return (
     <>
-      <div>
-        <div className="big-stat">{taps.length}<small>taps · 5 min</small></div>
-        <p className="hint">Tap your phone on the tag on its back to start a focus session. iOS opens the Focus shortcut and blocks distracting apps.</p>
+      <div className="tiles">
+        <div className="tile"><div className="label">Focus</div><div className="value">{session ? `${session.left}m` : 'Off'}</div></div>
+        <div className="tile"><div className="label">Next due</div><div className="value" title={nextDue?.title}>{nextDue ? when(nextDue.start, now).replace(/ ·.*/, '') : '—'}</div></div>
+        <div className="tile"><div className="label">Coach</div><div className="value">{s.settings?.coach_enabled === false ? 'Off' : 'On'}</div></div>
       </div>
-      {taps.length > 0 && (
-        <ul className="list">
-          {taps.map((e, i) => <li key={`${e.ts}-${i}`}><span><span className="icon">🎯</span>Focus started</span><span className="time">{ago(e.ts, now)}</span></li>)}
-        </ul>
-      )}
+      <div className="chips">
+        {FOCUS_BUTTONS.map(([name, text, kind]) => (
+          <button key={name} className={kind === 'primary' ? 'btn primary' : 'chip'} disabled={!canCommand} onClick={() => coach(name)}>{text}</button>
+        ))}
+      </div>
+      <p className="hint" style={{ margin: 0 }}>
+        Or sign <b>START FOCUS</b>, <b>REST</b>, <b>FINISH</b>, <b>TIME</b>, <b>MORE TIME</b> at the duck. While you focus it stays quiet except for deadlines.
+      </p>
+      <div className="section">
+        <h3>The duck said</h3>
+        {lines.length === 0 ? <p className="empty">Nothing yet. It checks in while you work and reminds you before things are due.</p> : (
+          <ul className="list">
+            {lines.map((e, i) => (
+              <li key={`${e.ts}-${i}`}><span><span className="icon">🦆</span>{e.value?.text}</span><span className="time">{ago(e.ts, now)}</span></li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="section">
+        <h3>Lock-in coach</h3>
+        <Toggle s={s} k="coach_enabled" label="Nudge me to lock in" hint="Check-ins, deadline reminders, “zoned out?” after 5 min of no movement"
+          migration="003_coach_and_calendar.sql" />
+        <RangeField s={s} k="coach_interval_min" label="Check in / focus length" min={5} max={60} format={(v) => `${v} min`} />
+        <SelectField s={s} k="coach_tone" label="Personality" options={TONES} />
+      </div>
+      <div className="section">
+        <h3>NFC focus tag</h3>
+        <p className="hint" style={{ margin: 0 }}>Tap your phone on the tag on its back. iOS opens the Focus shortcut and blocks distracting apps.</p>
+        {taps.length > 0 && (
+          <ul className="list">
+            {taps.map((e, i) => <li key={`${e.ts}-${i}`}><span><span className="icon">🎯</span>Tag tapped</span><span className="time">{ago(e.ts, now)}</span></li>)}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+}
+
+function CalendarField({ s }) {
+  if (!s.settings) return null;
+  if (!('calendar_urls' in s.settings)) {
+    return <p className="hint">Run backend/supabase/migrations/003_coach_and_calendar.sql to add calendars.</p>;
+  }
+  return (
+    <div className="field">
+      <label htmlFor="calendar_urls">Calendar links <span className="hint">one per line · private</span></label>
+      <textarea id="calendar_urls" className="input" rows={3} maxLength={2000} spellCheck={false}
+        placeholder={'https://calendar.google.com/calendar/ical/…/basic.ics\nhttps://…brightspace…/feed.ics'}
+        value={s.settings.calendar_urls ?? ''}
+        onChange={(e) => s.change('calendar_urls', e.target.value || null, 1200)} />
+      <span className="hint">
+        Google Calendar: Settings → your calendar → <i>Secret address in iCal format</i>. Brightspace / Canvas: Calendar → Subscribe / iCal feed.
+        Only the relay on this laptop reads these links; the duck just gets titles and times.
+      </span>
+    </div>
+  );
+}
+
+function CalendarPanel({ now, s, send, agenda, connected }) {
+  const upcoming = agenda.items.filter((i) => (i.end ?? i.start) >= now).slice(0, 15);
+  const fetched = agenda.fetched_at ? ago(agenda.fetched_at, now) : null;
+  return (
+    <>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <span className="hint">{agenda.feeds ? `${agenda.feeds} calendar${agenda.feeds > 1 ? 's' : ''}${fetched ? ` · updated ${fetched}` : ''}` : 'No calendars yet'}</span>
+        <button className="chip" disabled={!connected} onClick={() => send({ type: 'agenda_refresh' })}>↻ Refresh</button>
+      </div>
+      {agenda.errors?.map((e) => <p key={e} className="error">{e}</p>)}
+      <div className="section">
+        <h3>Up next</h3>
+        {upcoming.length === 0 ? <p className="empty">{agenda.feeds ? 'Nothing in the next 7 days. Enjoy it.' : 'Add a calendar link below and the duck will remind you before things are due.'}</p> : (
+          <ul className="list">
+            {upcoming.map((i) => (
+              <li key={i.id}>
+                <span><span className="icon">{i.kind === 'due' ? '📌' : '📅'}</span>{i.title}{i.kind === 'due' && <span className="hint"> · due</span>}</span>
+                <span className="time">{when(i.start, now, i.all_day)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="hint" style={{ margin: 0 }}>The duck mentions what’s due when you sit down, then reminds you 24 h, 3 h, 1 h and 15 min before. Events get a heads-up 15 min before.</p>
+      </div>
+      <div className="section">
+        <h3>Calendars</h3>
+        <CalendarField s={s} />
+      </div>
     </>
   );
 }
@@ -184,6 +299,7 @@ export const PANELS = {
   petting: { kicker: 'Top of head', title: 'Petting', Body: PettingPanel },
   voice: { kicker: 'Beak', title: 'Voice', Body: VoicePanel },
   microphone: { kicker: 'Chest', title: 'Microphone', Body: MicrophonePanel },
-  focus: { kicker: 'Back', title: 'Focus tag', Body: FocusPanel },
+  focus: { kicker: 'Back', title: 'Focus & coach', Body: FocusPanel },
+  calendar: { kicker: 'Deadlines', title: 'Calendar', Body: CalendarPanel },
   activity: { kicker: 'Live', title: 'Activity', Body: ActivityPanel },
 };

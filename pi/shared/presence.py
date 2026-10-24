@@ -34,3 +34,7 @@ class Presence:
             self.present, self._since = near, None
             return "arrive" if near else "leave"
         return None
+
+    def force_away(self):
+        """Mark nobody present now (e.g. no movement for a long time), without a leave timer."""
+        self.present, self._since = False, None

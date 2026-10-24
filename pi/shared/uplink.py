@@ -1,6 +1,6 @@
 """WebSocket link to the relay, in a background thread.
 
-  up = Uplink(url, token, on_settings, on_command); up.start()
+  up = Uplink(url, token, on_settings, on_command, on_agenda); up.start()
   up.send_event("posture", {...})     # never blocks; queued while offline
 
 Reconnects with backoff and resends anything queued while the link was down.
@@ -23,9 +23,9 @@ def log(msg: str):
 
 
 class Uplink:
-    def __init__(self, url: str, token: str, on_settings, on_command):
+    def __init__(self, url: str, token: str, on_settings, on_command, on_agenda=None):
         self.url, self.token = url, token
-        self.on_settings, self.on_command = on_settings, on_command
+        self.on_settings, self.on_command, self.on_agenda = on_settings, on_command, on_agenda
         self._queue: collections.deque[str] = collections.deque(maxlen=MAX_QUEUE)
         self._ws = None
         self._lock = threading.Lock()
@@ -66,6 +66,8 @@ class Uplink:
                             self.on_settings(msg.get("settings") or {})
                         elif msg.get("type") == "command":
                             self.on_command(msg.get("command") or {})
+                        elif msg.get("type") == "agenda" and self.on_agenda:
+                            self.on_agenda(msg.get("items") or [])
             except Exception as e:
                 log(f"disconnected ({e.__class__.__name__}: {e}); retrying in {backoff}s")
             with self._lock:

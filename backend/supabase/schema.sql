@@ -59,6 +59,14 @@ create table public.settings (
   sign_enabled         boolean not null default true,   -- Sign to Duck (ASL -> speech)
   sound_alerts_enabled boolean not null default true,   -- doorbell/phone/alarm -> LED
 
+  -- Lock-in coach (pi/coach): check-ins, deadline reminders, focus sessions
+  coach_enabled      boolean  not null default true,
+  coach_interval_min smallint not null default 25      check (coach_interval_min between 5 and 120),
+  coach_tone         text     not null default 'coach' check (coach_tone in ('gentle', 'coach', 'savage')),
+  -- iCal feed links, one per line (Google "secret address in iCal format", Brightspace/Canvas feeds).
+  -- Secret: read by the relay only, never pushed to the Pi.
+  calendar_urls      text check (char_length(calendar_urls) <= 2000),
+
   updated_at       timestamptz not null default now()
 );
 

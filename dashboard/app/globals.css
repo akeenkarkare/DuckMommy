@@ -258,3 +258,8 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; margin: 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* coach + calendar panels */
+textarea.input { width: 100%; resize: vertical; min-height: 72px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; }
+select.input { width: 100%; appearance: auto; }
+.tile .value[title] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

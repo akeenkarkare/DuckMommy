@@ -53,6 +53,13 @@ function connect() {
     } else if (msg.type === 'command') {
       if (msg.command.type === 'say') speak(msg.command.text);
       if (msg.command.type === 'quack') quack();
+      if (msg.command.type === 'coach') {   // the real duck runs pi/coach; this just answers
+        const text = `(coach: ${msg.command.name})`;
+        speak(text);
+        emit('coach', { kind: msg.command.name, text, source: 'template', item: null, focus_minutes_left: null });
+      }
+    } else if (msg.type === 'agenda') {
+      log(`agenda: ${msg.items.length} item(s)${msg.items[0] ? `, next "${msg.items[0].title}"` : ''}`);
     }
   });
   ws.on('close', (code, reason) => {

@@ -49,11 +49,13 @@ Pi  <==WS (DUCK_TOKEN)==>    Node relay  <==WS (Supabase session)==>  Dashboard 
 ## Wire protocol (implemented in `src/relay.js`; the real Pi must match `sim/fake-duck.js`)
 The first message on any socket is auth. Otherwise the socket is closed (4001 = no/late auth, 4003 = bad token/session).
 - Duck → relay: `{type:"auth", role:"duck", token}`, then `{type:"event", event:{type, value, ts}}`
-- Relay → duck: `{type:"auth_ok"}`, `{type:"settings", settings:{...}}`, `{type:"command", command:{type:"say", text} | {type:"quack"}}`
-- Dashboard → relay: `{type:"auth", role:"dashboard", access_token}`, `{type:"settings_changed"}`, `{type:"command", command}`
-- Relay → dashboard: `{type:"auth_ok", user_id}`, `{type:"buffer", events}`, `{type:"event", event}`, `{type:"status", duck_connected, with_you}`, `{type:"command_ack", ok}`
-- Fake `value` payloads (until the real sensors exist): posture `{state:"slouch"|"upright", neck_angle_deg, slouch_duration_s}`, pat `{touch_ms}`, presence `{present, distance_cm}`, sentry `{distance_cm, person_confirmed, confidence, night, trigger}` (real code: `pi/sentry/watch.py`), focus `{source:"nfc", action:"tap"}`, sign `{text, signs, commands}` (`pi/asl`), sound `{kind: doorbell|phone|alarm|notification|calling, label, score}` (`pi/sounds/alerts.py`).
+- Relay → duck: `{type:"auth_ok"}`, `{type:"settings", settings:{...}}`, `{type:"command", command:{type:"say", text} | {type:"quack"} | {type:"coach", name}}`, `{type:"agenda", items:[{id, title, kind:"due"|"event", start, end, all_day}]}` (ms epoch; next 7 days)
+- Dashboard → relay: `{type:"auth", role:"dashboard", access_token}`, `{type:"settings_changed"}`, `{type:"command", command}`, `{type:"agenda_refresh"}`. Coach command names: `start_focus`, `break`, `finish`, `time_left`, `more_time`.
+- Relay → dashboard: `{type:"auth_ok", user_id}`, `{type:"buffer", events}`, `{type:"event", event}`, `{type:"status", duck_connected, with_you}`, `{type:"command_ack", ok}`, `{type:"agenda", items, errors, feeds, fetched_at}` (that user's own calendars only; errors name the host, never the secret link)
+- Fake `value` payloads (until the real sensors exist): posture `{state:"slouch"|"upright", neck_angle_deg, slouch_duration_s}`, pat `{touch_ms}`, presence `{present, distance_cm}`, sentry `{distance_cm, person_confirmed, confidence, night, trigger}` (real code: `pi/sentry/watch.py`), focus `{source:"nfc", action:"tap"}`, sign `{text, signs, commands}` (`pi/asl`), sound `{kind: doorbell|phone|alarm|notification|calling, label, score}` (`pi/sounds/alerts.py`), coach `{kind: arrival|deadline|event|checkin|idle|focus_start|focus_done|break_start|break_over|finish|more_time|time_left, text, source: ai|template, item, focus_minutes_left}` (`pi/coach`). presence may carry `reason: "idle"` (no movement for 10 min).
 - **TTS proxy:** `POST /tts {text}` with `Authorization: Bearer DUCK_TOKEN` returns raw 16-bit mono PCM @ 22050 Hz from ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, optional `ELEVENLABS_MODEL_ID` in `.env`). `/health` shows `tts: true` once configured. `npm run make-quack` makes `assets/quack.wav`.
+- **Coach lines:** `POST /nudge {kind, tone, facts}` with `Authorization: Bearer DUCK_TOKEN` returns `{text}` from Claude (`ANTHROPIC_API_KEY`, optional `ANTHROPIC_MODEL` default `claude-haiku-5-5`, optional `ANTHROPIC_BASE_URL`). 503 when not configured, so the Pi uses its templates. Prompt: `src/nudge.js`. `/health` shows `coach_ai: true` once configured.
+- **Calendar:** `settings.calendar_urls` (one iCal link per line) is read only by the relay (`src/calendar.js`, `src/ics.js`), refreshed every 10 min and when the links change, and is NOT in the settings pushed to the Pi.
 - Settings reach the duck by two paths: Supabase Realtime and the dashboard's `settings_changed` ping. Duplicate pushes are harmless.
 
 ## Settings (per user, edited on the dashboard)
@@ -72,7 +74,7 @@ None right now.
 - Install: `npm install` (in `/backend`)
 - Relay: `npm run dev` (auto-restarts on change) or `npm run relay` · health check: `curl localhost:8080/health`
 - Fake duck: `npm run duck` (realistic pacing) or `npm run duck:fast` (4× speed)
-- Test: none yet
+- Test: `npm test` (node's built-in runner: iCal parsing/recurrence/DST, agenda merge, nudge prompt + cleanup)
 
 ## Decisions log
 - 2026-10-23: Stack is Next.js + Supabase (Auth + tables).
@@ -82,3 +84,4 @@ None right now.
 - 2026-10-23: Settings are written by the Next.js dashboard to Supabase. The relay subscribes via Realtime and pushes them to the Pi. An in-memory event buffer is approved. Deps are approved. The Pi is connected directly to the laptop.
 - 2026-10-23: Only one duck, so the `devices` table is dropped and the Pi uses a shared `DUCK_TOKEN`. The buffer is 5 minutes.
 - 2026-10-23: The active user is whoever most recently logged in or opened the dashboard (no claim button).
+- 2026-10-24: Lock-in coach + calendar (Akeen asked for it, Tomo-style). Claude writes the lines via `/nudge` (key on the laptop), templates as fallback. Calendar = iCal feed links parsed in-house (no new dependency); Google sign-in maybe later. New settings columns in `migrations/003_coach_and_calendar.sql`.

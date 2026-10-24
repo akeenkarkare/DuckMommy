@@ -6,8 +6,8 @@ import { supabase } from '@/lib/supabase';
 import { useRelay } from '@/lib/useRelay';
 import { useSettings } from '@/lib/useSettings';
 import { useDuck } from '@/components/duck/DuckContext';
-import { HOTSPOTS, ACTIVITY } from '@/components/duck/hotspots';
-import { PANELS } from '@/components/Panels';
+import { HOTSPOTS, ACTIVITY, CALENDAR } from '@/components/duck/hotspots';
+import { PANELS, focusSession } from '@/components/Panels';
 
 function useNow(ms) {
   const [now, setNow] = useState(() => Date.now());
@@ -39,12 +39,13 @@ export default function Dashboard() {
 
   // Live events animate the 3D duck (with the user's own messages in its speech bubble).
   const onEvent = useCallback((e) => {
+    if (e.type === 'coach' && e.value?.text) return bridge.current.react({ type: 'say', value: { text: e.value.text } });
     const st = s.settings ?? {};
     const message = e.type === 'posture' ? st.posture_message : e.type === 'sentry' ? st.sentry_message : e.type === 'presence' ? st.presence_message : undefined;
     bridge.current.react({ ...e, message });
   }, [bridge, s.settings]);
 
-  const { connected, status, events, lastAck, send, bufferMs } = useRelay(!!user, onEvent);
+  const { connected, status, events, lastAck, send, agenda, bufferMs } = useRelay(!!user, onEvent);
   const canCommand = connected && status.duck_connected && status.with_you;
 
   useEffect(() => {
@@ -77,14 +78,16 @@ export default function Dashboard() {
     const count = (type) => recent.filter((e) => e.type === type).length;
     const posture = last('posture');
     const sound = last('sound');
+    const nextDue = agenda.items.find((i) => i.kind === 'due' && i.start > now);
+    const session = focusSession(events, now);
     setBadges({
       camera: posture ? (posture.value?.state === 'slouch' ? 'Slouching 👀' : 'Upright ✓') : 'Posture · Sentry · Signs',
       petting: `${count('pat')} pats · 5 min`,
       voice: s.settings ? `Volume ${s.settings.volume}` : 'What it says',
       microphone: sound ? `Heard: ${sound.value?.label ?? sound.value?.kind}` : 'Listening',
-      focus: `${count('focus')} focus taps`,
+      focus: session ? `Focus · ${session.left}m left` : nextDue ? `Next: ${nextDue.title.slice(0, 22)}` : `${count('focus')} focus taps`,
     });
-  }, [events, now, s.settings, setBadges]);
+  }, [events, now, s.settings, setBadges, agenda]);
 
   useEffect(() => {
     if (focus) setTouched(true);
@@ -94,7 +97,7 @@ export default function Dashboard() {
 
   const panel = focus && PANELS[focus];
   const Body = panel?.Body;
-  const dockItems = [...HOTSPOTS, ACTIVITY];
+  const dockItems = [...HOTSPOTS, CALENDAR, ACTIVITY];
 
   return (
     <>
@@ -136,7 +139,7 @@ export default function Dashboard() {
             </div>
             <div className="panel-body" key={focus}>
               <Body events={recent} now={now} windowMs={bufferMs} s={s} send={send} canCommand={canCommand}
-                duck={bridge.current} lastAck={lastAck} />
+                duck={bridge.current} lastAck={lastAck} agenda={agenda} connected={connected} allEvents={events} />
               {s.state && <p className="hint">{s.state}</p>}
             </div>
           </>

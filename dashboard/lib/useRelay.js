@@ -14,6 +14,7 @@ export function useRelay(enabled, onEvent) {
   const [status, setStatus] = useState({ duck_connected: false, with_you: false });
   const [events, setEvents] = useState([]);
   const [lastAck, setLastAck] = useState(null);
+  const [agenda, setAgenda] = useState({ items: [], errors: [], feeds: 0, fetched_at: null });
   const wsRef = useRef(null);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
@@ -42,6 +43,7 @@ export function useRelay(enabled, onEvent) {
         }
         else if (msg.type === 'status') setStatus(msg);
         else if (msg.type === 'command_ack') setLastAck({ ...msg, at: Date.now() });
+        else if (msg.type === 'agenda') setAgenda(msg);
       };
       ws.onclose = (e) => {
         setConnected(false);
@@ -66,5 +68,5 @@ export function useRelay(enabled, onEvent) {
     if (ws?.readyState === 1) ws.send(JSON.stringify(msg));
   }, []);
 
-  return { connected, status, events, lastAck, send, bufferMs: BUFFER_MS };
+  return { connected, status, events, lastAck, send, agenda, bufferMs: BUFFER_MS };
 }

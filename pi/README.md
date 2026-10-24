@@ -11,6 +11,8 @@
 | Sound alerts: doorbell, phone, alarm, beeps, shouting → LED | USB mic + LED | `sounds/` | `sound {kind, label, score}` |
 | Sentry (when away) + night vision | ultrasonic + camera | `sentry/`, `shared/sources.py` | `sentry` |
 | At desk / away | ultrasonic (or camera) | `shared/presence.py` | `presence` |
+| Lock-in coach: what's due when you sit down, deadline + event reminders, check-ins, focus sessions | calendar from the relay + camera | `coach/` (lines via relay `/nudge`, templates offline) | `coach {kind, text}` |
+| Zoned out? 5 min with no movement → nudge, 5 more → away (`presence` reason `idle`) | camera | `motion/` | `coach`, `presence` |
 
 **Status:** all the decision logic is unit-tested, and the relay link and voice proxy are
 tested against the real relay. The camera, GPIO, mic and MediaPipe parts compile, but
@@ -57,4 +59,4 @@ one sign at a time with the hands lowered in between. It needs sign data and a t
 first: see `asl/README.md`. Without one, everything else runs and nothing is recognised.
 
 ## Tests
-`python3 -m unittest` in `asl/`, `sounds/`, `sentry/`, `posture/`; `python3 -m unittest test_presence` in `shared/`.
+`python3 -m unittest` in `asl/`, `sounds/`, `sentry/`, `posture/`, `coach/`, `motion/`; `python3 -m unittest test_presence` in `shared/`.

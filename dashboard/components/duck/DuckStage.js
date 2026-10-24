@@ -293,7 +293,7 @@ export default function DuckStage() {
         const idle = reduced ? 0 : clamp((t - c.lastInput - 2.5) / 2, 0, 1);
         gYaw = c.userYaw + Math.sin(t * 0.35) * 0.28 * idle;
         gPitch = c.userPitch;
-        if (f === 'activity') { gOffX = wide ? PANEL_W / 2 / W : 0; gOffY = wide ? 0 : 0.3; }
+        if (f === 'activity' || f === 'calendar') { gOffX = wide ? PANEL_W / 2 / W : 0; gOffY = wide ? 0 : 0.3; }
         else gLabels = 1;
       }
 
