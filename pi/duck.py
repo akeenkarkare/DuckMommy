@@ -235,6 +235,9 @@ class Duck:
         else:
             if not args.no_sign:
                 log(f"{args.holistic_model} missing (run get_models.sh): Sign to Duck off")
+            if not Path(args.pose_model).exists():
+                log(f"{args.pose_model} is missing. Download the models once with: cd {PI} && ./get_models.sh")
+                raise SystemExit(1)
             from pose import PoseDetector
             pose = PoseDetector(args.pose_model)
 
