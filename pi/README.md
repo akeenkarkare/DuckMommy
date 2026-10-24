@@ -7,7 +7,7 @@
 | Quack when the head is pressed | pressure sensor (digital out) | `duck.py` + `shared/voice.py` | `pat {touch_ms}` |
 | Voice: ElevenLabs, messages set on the dashboard | speakers | `shared/voice.py` (via relay `/tts`) | — |
 | Posture prompts | camera | `posture/` | `posture` |
-| Sign to Duck: ASL handshapes → spoken text | camera | `sign/` | `sign {text, signs}` |
+| Sign to Duck: 54 ASL word signs → phrases + commands | camera | `asl/` | `sign {text, signs, commands}` |
 | Sound alerts: doorbell, phone, alarm, beeps, shouting → LED | USB mic + LED | `sounds/` | `sound {kind, label, score}` |
 | Sentry (when away) + night vision | ultrasonic + camera | `sentry/`, `shared/sources.py` | `sentry` |
 | At desk / away | ultrasonic (or camera) | `shared/presence.py` | `presence` |
@@ -34,7 +34,7 @@ python3 duck.py                 # everything
 python3 duck.py --no-mic        # skip sound alerts
 python3 duck.py --source 0      # laptop webcam (dev; GPIO parts need the Pi)
 ```
-Only one process can use the camera. `posture/run.py`, `sentry/run.py` and `sign/record.py`
+Only one process can use the camera. `posture/run.py`, `sentry/run.py` and `asl/run.py`
 are standalone tuning tools, so stop `duck.py` before running them.
 
 ## Wiring (BCM pin numbers go in `.env`)
@@ -47,12 +47,9 @@ are standalone tuning tools, so stop `duck.py` before running them.
 - **Mic → `MIC_DEVICE`.** Find it with `arecord -l`. To see what the mic hears: `python3 sounds/listener.py <device>`.
 
 ## Sign to Duck
-Works out of the box with built-in handshapes: **hello** (open palm), **I love you** (ILY),
-**you** (point), **yes** / **no** (thumb up/down). Hold a sign ~0.6 s; drop your hand for
-1.5 s and the duck says the sentence. To add signs or fingerspelled letters, record them:
-`python3 sign/record.py hello`, `python3 sign/record.py A`. Once anything is recorded,
-recorded signs replace the built-ins, so record every sign you want. Only static
-handshapes work; signs that need motion (J, Z, "thank you") don't.
+ASL word signs with movement (HELLO, HELP, START + FOCUS → "Let's start a focus session."),
+one sign at a time with the hands lowered in between. It needs sign data and a trained model
+first: see `asl/README.md`. Without one, everything else runs and nothing is recognised.
 
 ## Tests
-`python3 -m unittest` in `sign/`, `sounds/`, `sentry/`, `posture/`; `python3 -m unittest test_presence` in `shared/`.
+`python3 -m unittest` in `asl/`, `sounds/`, `sentry/`, `posture/`; `python3 -m unittest test_presence` in `shared/`.

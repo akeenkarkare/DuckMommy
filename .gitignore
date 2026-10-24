@@ -10,3 +10,5 @@ __pycache__/
 .venv/
 *.tflite
 .cache/
+# ASL Citizen's licence forbids sharing the data or anything made from it
+pi/asl/data/**/citizen*

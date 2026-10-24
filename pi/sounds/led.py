@@ -15,6 +15,7 @@ PATTERNS = {
     "alarm": (0.08, 0.08, 90),         # strobe ~14 s
     "notification": (0.3, 0.3, 3),     # three blinks
     "calling": (2.0, 0.5, 3),          # long glows
+    "sign": (0.1, 0.1, 2),             # quick double blink: word sign recognised (pi/asl)
 }
 
 
