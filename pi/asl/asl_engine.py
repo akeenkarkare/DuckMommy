@@ -184,6 +184,16 @@ class PhraseBuilder:
             text = text[0].upper() + text[1:] + "."
         return self._make(glosses, text, commands)
 
+    def known_texts(self) -> list[str]:
+        """Every sentence a single phrase or sign turns into, so the voice can cache them up front."""
+        texts = {p["text"] for p in self.phrases}
+        for gloss in self.words:
+            saved = self.pending, self.next_id
+            self.pending = [gloss]
+            texts.add(self.flush().text)
+            self.pending, self.next_id = saved
+        return sorted(t for t in texts if t)
+
     def _make(self, glosses, text, commands):
         p = Phrase(self.next_id, list(glosses), text, commands)
         self.next_id += 1

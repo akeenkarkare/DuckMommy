@@ -330,7 +330,7 @@ function ActivityPanel({ events }) {
 }
 
 export const PANELS = {
-  camera: { kicker: 'Left eye', title: 'Camera', Body: CameraPanel },
+  camera: { kicker: 'Right eye', title: 'Camera', Body: CameraPanel },
   petting: { kicker: 'Top of head', title: 'Petting', Body: PettingPanel },
   voice: { kicker: 'Beak', title: 'Voice', Body: VoicePanel },
   microphone: { kicker: 'Chest', title: 'Microphone', Body: MicrophonePanel },

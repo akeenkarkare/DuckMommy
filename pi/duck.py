@@ -264,6 +264,7 @@ class Duck:
             engine, model_path = make_engine()
             pose = HolisticDetector(args.holistic_model)
             words = WordSignReader(engine, self.settings)
+            self.voice.prefetch(engine.phrases.known_texts())   # sign sentences play from cache, no TTS wait
             log(f"Sign to Duck: model {model_path or 'missing (get sign data + train in pi/asl)'}")
         else:
             if not args.no_sign:
@@ -328,7 +329,10 @@ class Duck:
                 if sentry_on and self.wake == "ultrasonic" and umotion.update(distance):
                     self.act(watch.trigger(now, distance, "ultrasonic"))
 
-                need_cam = (presence.present or watch.looking or not self.sonar or idle_away
+                # Someone has the dashboard's live view open: camera on at full speed, so the feed
+                # doesn't stutter at the away rate or wait for "arrive" when they sit back down.
+                watching = self.uplink is not None and self.uplink.video_on
+                need_cam = (presence.present or watch.looking or not self.sonar or idle_away or watching
                             or (sentry_on and self.wake == "camera"))
                 cam.start() if need_cam else cam.stop()
                 rgb = cam.read() if need_cam else None
@@ -396,7 +400,7 @@ class Duck:
                         + (f" · distance {distance:.0f} cm" if distance is not None else ""))
                     stat.update(t=now, frames=0, pose=0)
 
-                if presence.present or watch.looking:
+                if presence.present or watch.looking or watching:
                     period = 1.0 / args.fps
                 elif need_cam:
                     period = 1.0 / IDLE_CAMERA_FPS

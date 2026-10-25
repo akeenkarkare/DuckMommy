@@ -29,6 +29,7 @@ from .config import PI_DIR, REPO_DIR
 CACHE_DIR = PI_DIR / ".cache" / "tts"
 QUACK_WAV = REPO_DIR / "assets" / "quack.wav"
 TTS_RATE = 22050
+STREAM_CHUNK = 4096   # ~0.1 s of audio
 ESPEAK = next((c for c in ("espeak-ng", "espeak") if shutil.which(c)), None)
 APLAY = shutil.which("aplay")
 AFPLAY = shutil.which("afplay")
@@ -62,6 +63,39 @@ def _play_pcm(pcm: bytes, rate: int):
             subprocess.run([AFPLAY, f.name], check=False)
     else:
         log("no audio player (aplay/afplay); not playing")
+
+
+class _Stream:
+    """aplay fed chunk by chunk; started on the first chunk, so a failed fetch plays nothing."""
+
+    def __init__(self, voice: "Voice", rate: int):
+        self.voice, self.rate, self.proc, self.samples, self.t0 = voice, rate, None, 0, 0.0
+
+    def write(self, pcm: bytes):
+        if not pcm:
+            return
+        if self.proc is None:
+            self.proc = subprocess.Popen([APLAY, "-q", "-f", "S16_LE", "-r", str(self.rate), "-c", "1", "-t", "raw", "-"],
+                                         stdin=subprocess.PIPE)
+            self.t0 = time.monotonic()
+        self.samples += len(pcm) // 2
+        with self.voice._lock:   # busy until this audio has played out (the mic ignores the duck)
+            self.voice._busy_until = max(self.voice._busy_until, self.t0 + self.samples / self.rate + 0.5)
+        try:
+            self.proc.stdin.write(_scale(pcm, self.voice._volume()))
+        except BrokenPipeError:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        if self.proc:
+            try:
+                self.proc.stdin.close()
+            except BrokenPipeError:
+                pass
+            self.proc.wait()
 
 
 class Voice:
@@ -111,18 +145,34 @@ class Voice:
     def _cache_path(self, text: str) -> Path:
         return CACHE_DIR / (hashlib.sha1(text.encode()).hexdigest() + ".pcm")
 
-    def _fetch(self, text: str) -> bytes | None:
+    def _fetch(self, text: str, on_chunk=None) -> bytes | None:
+        """The clip for `text`: from the cache, else from the relay. `on_chunk(pcm)` gets the audio
+        as it streams in (so playback starts on the first chunk); the cache only gets whole clips."""
         path = self._cache_path(text)
         if path.exists():
-            return path.read_bytes()
+            pcm = path.read_bytes()
+            if on_chunk:
+                on_chunk(pcm)
+            return pcm
         if not self.tts_url:
             return None
         req = urllib.request.Request(self.tts_url, data=json.dumps({"text": text}).encode(), method="POST",
                                      headers={"content-type": "application/json", "authorization": f"Bearer {self.token}"})
+        parts, odd = [], b""
         try:
             with urllib.request.urlopen(req, timeout=10) as r:
-                pcm = r.read()
+                while chunk := r.read1(STREAM_CHUNK):   # whatever has arrived, up to ~0.1 s
+                    parts.append(chunk)
+                    if on_chunk:   # whole 16-bit samples only
+                        chunk, odd = odd + chunk, b""
+                        if len(chunk) % 2:
+                            chunk, odd = chunk[:-1], chunk[-1:]
+                        on_chunk(chunk)
+            pcm = b"".join(parts)
         except Exception as e:   # offline, relay down, ElevenLabs not configured: fall back
+            if parts:   # cut off mid-clip: what played, played; don't cache half a clip
+                log(f"TTS stream cut off: {e}")
+                return b"".join(parts)
             if not self._tts_down:
                 self._tts_down = True
                 hint = " (ElevenLabs keys not set in backend/.env?)" if "503" in str(e) else ""
@@ -137,15 +187,19 @@ class Voice:
     def _worker(self):
         while True:
             text = self._queue.get()
-            pcm = self._fetch(text)
-            if pcm:
-                self._mark_busy(len(pcm) / 2 / TTS_RATE)
-                _play_pcm(_scale(pcm, self._volume()), TTS_RATE)
-            elif ESPEAK:
+            if APLAY:   # play while it downloads
+                with _Stream(self, TTS_RATE) as out:
+                    pcm = self._fetch(text, out.write)
+            else:
+                pcm = self._fetch(text)
+                if pcm:
+                    self._mark_busy(len(pcm) / 2 / TTS_RATE)
+                    _play_pcm(_scale(pcm, self._volume()), TTS_RATE)
+            if not pcm and ESPEAK:
                 self._mark_busy(len(text) * 0.08)
                 subprocess.run([ESPEAK, "-a", str(int(self._volume() * 2)), text], check=False,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
+            elif not pcm:
                 log(f'(no TTS) "{text}"')
 
     def _quack(self):

@@ -374,7 +374,7 @@ async function handleTts(req, res) {
 
   try {
     const r = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(ELEVENLABS_VOICE_ID)}?output_format=pcm_${TTS_SAMPLE_RATE}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(ELEVENLABS_VOICE_ID)}/stream?output_format=pcm_${TTS_SAMPLE_RATE}`,
       {
         method: 'POST',
         headers: { 'xi-api-key': ELEVENLABS_API_KEY, 'content-type': 'application/json' },
@@ -386,13 +386,16 @@ async function handleTts(req, res) {
       log('tts failed', r.status, (await r.text()).slice(0, 200));
       return res.writeHead(502).end();
     }
-    const audio = Buffer.from(await r.arrayBuffer());
+    // Stream it through: the duck starts playing on the first chunk instead of after the whole clip.
     res.writeHead(200, { 'content-type': `audio/L16; rate=${TTS_SAMPLE_RATE}; channels=1`, 'x-sample-rate': TTS_SAMPLE_RATE });
-    res.end(audio);
-    log(`tts ${audio.length} bytes: "${text.slice(0, 40)}"`);
+    let bytes = 0;
+    for await (const chunk of r.body) { bytes += chunk.length; res.write(chunk); }
+    res.end();
+    log(`tts ${bytes} bytes: "${text.slice(0, 40)}"`);
   } catch (e) {
     log('tts error', e.message);
-    res.writeHead(504).end();
+    if (res.headersSent) res.destroy();   // cut off mid-stream: the duck drops the partial clip
+    else res.writeHead(504).end();
   }
 }
 
