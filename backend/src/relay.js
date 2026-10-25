@@ -16,6 +16,7 @@ import { imessageConfigured, sendIMessage, sentryText } from './imessage.js';
 import { daySummary, dueReminders } from './reminders.js';
 import { writeNudge } from './nudge.js';
 import { alertPhone } from './notify.js';
+import { mentionsDuck, quickIntent } from './quick.js';
 import { answerAgenda, answerLookup, answerRecall, friendlyWhen, parseRemindAt, transcribe, understand } from './memory.js';
 
 const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, ANTHROPIC_API_KEY } = process.env;
@@ -558,7 +559,7 @@ async function handleVoice(req, res) {
   if (!userId) return voiceReply(res, 200, { intent: 'none', heard: '', say: 'Open the dashboard first so I know who you are.' });
 
   const t0 = Date.now(), timing = {};
-  res.on('finish', () => log(`voice timing: speech-to-text ${timing.stt ?? '-'} ms, understand ${timing.understand ?? '-'} ms, lookup ${timing.lookup ?? '-'} ms, total ${Date.now() - t0} ms (${MEMORY_MODEL})`));
+  res.on('finish', () => log(`voice timing: speech-to-text ${timing.stt ?? '-'} ms, understand ${timing.understand ?? '-'} ms, lookup ${timing.lookup ?? '-'} ms, total ${Date.now() - t0} ms (${timing.path === 'quick' ? 'quick path, no Claude' : MEMORY_MODEL})`));
   try {
     let heard;
     if (String(req.headers['content-type'] ?? '').startsWith('application/json')) {
@@ -577,7 +578,10 @@ async function handleVoice(req, res) {
     const pending = voiceFollowUps.get(userId);
     voiceFollowUps.delete(userId);
     const transcript = pending && pending.until > now ? `${pending.heard} ... ${heard}` : heard;
-    const meant = await understand({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, transcript, name, now, tz: MEMORY_TZ });
+    // Simple commands ("sentry mode on", "let's lock in", "what time is it") skip Claude: ~2 s faster.
+    const quick = pending ? null : quickIntent(heard, { now, tz: MEMORY_TZ });
+    const meant = quick ?? await understand({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, transcript, name, now, tz: MEMORY_TZ });
+    timing.path = quick ? 'quick' : 'claude';
     timing.understand = Date.now() - now;
     const askBack = (say) => {   // a question back: remember what was said, listen for the answer
       voiceFollowUps.set(userId, { heard: transcript, until: Date.now() + FOLLOW_UP_MS });
@@ -683,6 +687,11 @@ async function handleVoice(req, res) {
       return voiceReply(res, 200, { intent: 'focus', heard, focus: meant.focus, say: '', quiet: true });
     }
 
+    // The wake word misfired on a conversation nearby (no "duck" anywhere in it): don't butt in.
+    if (!pending && !mentionsDuck(heard)) {
+      log('voice ignored: no wake word in the transcript');
+      return voiceReply(res, 200, { intent: 'none', heard, say: '', quiet: true });
+    }
     return voiceReply(res, 200, { intent: 'other', heard, say: meant.reply || "Wait, what? Say that again. You can say remember, remind me, or ask what's on your calendar." });
   } catch (e) {
     log('voice failed', e.message);
