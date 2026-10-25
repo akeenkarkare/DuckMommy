@@ -12,3 +12,5 @@ __pycache__/
 .cache/
 # ASL Citizen's licence forbids sharing the data or anything made from it
 pi/asl/data/**/citizen*
+# Trained sign model: built from ASL Citizen samples, so the same licence applies
+pi/asl/models/

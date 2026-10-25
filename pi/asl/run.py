@@ -103,6 +103,8 @@ def main():
     ap.add_argument("--fps", type=float, default=15, help="max frames analysed per second (signs are fast)")
     ap.add_argument("--rest-line", type=float, default=Config.rest_line,
                     help="shoulder widths below the shoulders; hands below it are resting")
+    ap.add_argument("--phrase-gap", type=float, default=0.7,
+                    help="seconds of no signing before the phrase is spoken (duck.py uses 1.6 for 2-sign phrases)")
     ap.add_argument("--record", metavar="GLOSS", help="save the next --n signs as samples of GLOSS")
     ap.add_argument("--n", type=int, default=15)
     ap.add_argument("--who", default="anon", help="signer name, so train.py can test on unseen signers")
@@ -113,6 +115,7 @@ def main():
     args = ap.parse_args()
 
     engine, model_path = make_engine(args.rest_line, args.asl_model, on_sample=save_sample)
+    engine.cfg.phrase_gap_seconds = args.phrase_gap
     if args.record:
         gloss = args.record if args.record.startswith("_") else args.record.upper()
         engine.start_recording(gloss, args.n, args.who.lower())

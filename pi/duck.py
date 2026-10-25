@@ -196,7 +196,15 @@ class Duck:
                 slouch = judge.slouch_since is not None
                 lines.append((f"posture: bend {judge.angle:.0f} / limit {judge.limit:.0f}  {'SLOUCH' if slouch else 'ok'}",
                               red if slouch else green))
-            lines.append((f"sign to duck: {'on' if words else 'off'}", white))
+            if words:
+                snap = words.engine.snapshot()
+                guess = snap["last_guess"]
+                last = "--" if guess is None else (guess["label"] or f"? ({guess['raw_label']})")
+                pending = " ".join(snap["pending"])
+                lines.append((f"sign: {snap['status']}  last {last}" + (f"  signs: {pending}" if pending else ""),
+                              green if snap["model_loaded"] else amber))
+            else:
+                lines.append(("sign to duck: off", white))
             if coach is not None:
                 focus = ""
                 if coach.focus_until is not None:
@@ -211,6 +219,14 @@ class Duck:
         lux = "--" if cam.lux is None else f"{cam.lux:.0f}"
         lines.append((f"{'NIGHT' if cam.night else 'DAY'}  lux {lux}", white))
         return lines
+
+    @staticmethod
+    def _rest_y(words) -> float | None:
+        """Sign to Duck's rest line as a fraction of frame height (hands below it = resting)."""
+        seg = words.engine.segmenter
+        if seg.shoulder_y is None:
+            return None
+        return seg.shoulder_y + words.engine.cfg.rest_line * seg.shoulder_w
 
     # ── main loop (camera + ultrasonic) ─────────────────────────────────────
     def run(self):
@@ -334,11 +350,12 @@ class Duck:
                     if preview or live:
                         still = motion.still_for(now) if presence.present else None
                         lines = self._overlay(presence, points, judge, watch, words, cam, self.coach, still, idle_away)
+                        hands, rest_y = (body, self._rest_y(words)) if words and presence.present else (None, None)
                         if preview:
-                            preview.push(rgb, lines, points)
+                            preview.push(rgb, lines, points, hands, rest_y)
                         if live:   # dashboard live view, through the relay
                             from shared.preview import render_jpeg
-                            jpg = render_jpeg(rgb, lines, points, quality=60)
+                            jpg = render_jpeg(rgb, lines, points, quality=60, hands=hands, rest_y=rest_y)
                             if jpg:
                                 self.uplink.send_frame(jpg)
                             last_video = now

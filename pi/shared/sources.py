@@ -17,6 +17,7 @@ Only one process can own the Pi camera at a time.
 from __future__ import annotations
 
 import sys
+import threading
 import time
 
 # auto mode: stay below DARK_LUX for HOLD_S -> night; above BRIGHT_LUX for HOLD_S -> day.
@@ -158,6 +159,22 @@ class OpenCVCamera:
         if not self.cap.isOpened():
             raise SystemExit(f"cannot open video source {source!r}")
         self.running = True
+        # Webcams queue frames while the caller is busy (Holistic is slower than
+        # 30 fps), so reading in the loop falls further and further behind.
+        # A thread keeps only the newest frame. Files are read in order instead.
+        self.live = str(source).isdigit()
+        self.latest, self.lock, self.closed = None, threading.Lock(), False
+        if self.live:
+            threading.Thread(target=self._grab, daemon=True).start()
+
+    def _grab(self):
+        while not self.closed:
+            ok, bgr = self.cap.read()
+            if not ok:
+                time.sleep(0.01)
+                continue
+            with self.lock:
+                self.latest = bgr
 
     def start(self):
         self.running = True
@@ -168,10 +185,19 @@ class OpenCVCamera:
     def read(self):
         if not self.running:
             return None
+        if self.live:
+            with self.lock:
+                bgr, self.latest = self.latest, None
+            if bgr is None:
+                time.sleep(0.005)
+                return None
+            return self.cv2.cvtColor(bgr, self.cv2.COLOR_BGR2RGB)
         ok, bgr = self.cap.read()
         return self.cv2.cvtColor(bgr, self.cv2.COLOR_BGR2RGB) if ok else None
 
     def close(self):
+        self.closed = True
+        time.sleep(0.05)
         self.cap.release()
 
 
