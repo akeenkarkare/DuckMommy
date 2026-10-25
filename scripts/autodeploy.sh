@@ -11,9 +11,12 @@ EVERY="${DEPLOY_EVERY_S:-60}"
 SITE_LOG="${SITE_LOG:-$HOME/duck.log}"
 log() { echo "$(date '+%m-%d %H:%M:%S') $*"; }
 
+DEPLOYED=.deployed   # the commit the running site was built from (gitignored)
+
 start_site() {
   ./stop.sh
   setsid nohup ./dev.sh --prod > "$SITE_LOG" 2>&1 < /dev/null &
+  git rev-parse HEAD > "$DEPLOYED"
   log "site starting (build takes ~1-2 min): $(git log -1 --format='%h %an: %s')"
 }
 
@@ -29,6 +32,9 @@ while true; do
     else
       log "pull failed (local changes on the server? run: git status). Not deploying."
     fi
+  elif [ "$(cat "$DEPLOYED" 2>/dev/null)" != "$(git rev-parse HEAD)" ]; then
+    log "the running site is older than the code here (pulled by hand?)"
+    start_site
   elif ! pgrep -f 'dev.sh --prod' >/dev/null; then
     log "site isn't running"
     start_site
