@@ -15,6 +15,7 @@ import { localTimeZone } from './ics.js';
 import { imessageConfigured, sendIMessage, sentryText } from './imessage.js';
 import { daySummary, dueReminders } from './reminders.js';
 import { writeNudge } from './nudge.js';
+import { alertPhone } from './notify.js';
 import { answerAgenda, answerLookup, answerRecall, friendlyWhen, parseRemindAt, transcribe, understand } from './memory.js';
 
 const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, ANTHROPIC_API_KEY } = process.env;
@@ -303,6 +304,7 @@ function handleDuck(msg) {
   const event = { user_id: activeUserId, type: msg.event.type, value: msg.event.value ?? null, ts };
   recentEvents(activeUserId).push(event);
   sendToUser(activeUserId, { type: 'event', event });
+  alertPhone(event, log);   // fire and forget; no-op unless NTFY_TOPIC is set
   log('event', event.type, JSON.stringify(event.value));
   if (event.type === 'sentry' && event.value?.person_confirmed) textSentryAlert();
 }

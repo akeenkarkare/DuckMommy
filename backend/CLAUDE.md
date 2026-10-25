@@ -122,3 +122,9 @@ The Calendar tab's **Connect Google Calendar** goes through Auth0's Google login
 
 While the Google consent screen is in *Testing* mode, Google expires refresh tokens after 7 days: just press Connect again (or publish the app).
 
+
+## Phone alerts (sentry → ntfy push)
+- A `sentry` event with `person_confirmed: true` (the Pi's sentry check, or someone sitting down while sentry is on) → `src/notify.js` POSTs to `https://ntfy.sh/$NTFY_TOPIC`: *"There's a person in your room. Seen at 3:42 AM."* (`(lights are off)` at night). Install the **ntfy** app and subscribe to the same topic.
+- Fire and forget from `handleDuck`, every error caught and logged (`phone alert sent / failed`). **No-op unless `NTFY_TOPIC` is set.** The Pi's sentry cooldown (60 s) already limits it to about one push a minute.
+- Only while the duck has an active user (someone opened the dashboard); with no owner, events are dropped and nothing is sent.
+- Env: `NTFY_TOPIC` (hard to guess: anyone who knows it can read the alerts; `echo duckmommy-$(openssl rand -hex 4)`), optional `NTFY_URL` (self-hosted), `ALERT_TZ` (default America/New_York). Test: `curl -d "test from duck" ntfy.sh/<topic>`.
