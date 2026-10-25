@@ -10,6 +10,10 @@ Runs on the mic thread. Every audio chunk from sounds/listener.py comes through 
              lets Claude work out what was meant, saves or looks up the memory, and returns
              the line the duck says
 
+While a turn is on (wake word -> reply played), on_turn(True/False) tells duck.py to hold its other
+lines (posture, coach, signs) so the duck doesn't talk over you. A reply with listen: true (the relay
+asked a question back, e.g. "okay but when?") opens the mic again without the wake word.
+
 Audio is ignored while the duck itself is talking, so it can't wake itself up, and the wake
 word only counts while the duck sees someone at the desk (present()), so a passer-by can't
 ask it to read your notes out while you're away.
@@ -57,12 +61,14 @@ def post_voice(url: str, token: str, wav: bytes) -> dict:
 
 class TalkToDuck:
     def __init__(self, wake, voice, voice_url: str | None, token: str | None,
-                 on_listening=None, post=post_voice, clock=time.monotonic, present=lambda: True):
+                 on_listening=None, post=post_voice, clock=time.monotonic, present=lambda: True, on_turn=None):
         """wake: object with feed(pcm) -> bool and reset() (wake.WakeWord).
         voice: shared.voice.Voice (say/busy). on_listening(bool): e.g. LED on/off."""
         self.wake, self.voice = wake, voice
         self.voice_url, self.token = voice_url, token
         self.on_listening = on_listening or (lambda on: None)
+        self.on_turn = on_turn or (lambda on: None)
+        self.follow_up = False   # the current recording answers the duck's question (no wake word)
         self.post, self.clock, self.present = post, clock, present
         self.preroll: collections.deque[bytes] = collections.deque()
         self.preroll_bytes = 0
@@ -97,8 +103,13 @@ class TalkToDuck:
         if self.recorder is not None:
             done = self.recorder.feed(pcm)
             if done is not None:
-                self.recorder = None
+                spoke, follow_up = self.recorder.spoke, self.follow_up
+                self.recorder, self.follow_up = None, False
                 self.on_listening(False)
+                if follow_up and not spoke:   # no answer to the duck's question: drop it quietly
+                    log("no answer, never mind")
+                    self.on_turn(False)
+                    return
                 self._send(done)
             return
         self._remember(pcm)
@@ -106,6 +117,7 @@ class TalkToDuck:
             return
         if self.wake.feed(pcm):
             log("wake word heard, listening")
+            self.on_turn(True)
             self.wake.reset()
             self.recorder = UtteranceRecorder(b"".join(self.preroll), clock=self.clock)
             self.preroll.clear()
@@ -122,21 +134,31 @@ class TalkToDuck:
         if not self.voice_url or not self.token:
             log("RELAY_URL/DUCK_TOKEN missing: can't reach the memory locker")
             self.voice.say("Not gonna lie, I can't reach my notes right now.")
+            self.on_turn(False)
             return
         self.sending = True
         threading.Thread(target=self._send_worker, args=(pcm,), daemon=True, name="talk").start()
 
     def _send_worker(self, pcm: bytes):
+        listen = False
         try:
             reply = self.post(self.voice_url, self.token, to_wav(pcm))
             log(f'heard "{reply.get("heard", "")}" -> {reply.get("intent")}')
             if not reply.get("quiet"):   # quiet: the duck answers another way (e.g. the focus coach speaks)
                 self.voice.say(reply.get("say") or "Sorry, I didn't catch that.")
+            listen = bool(reply.get("listen"))
         except Exception as e:   # relay down, offline, timeout
             log(f"voice request failed: {e}")
             self.voice.say("My brain is buffering. Try again in a sec.")
         finally:
             self._wait_until_quiet()
+            if listen:   # the duck asked something back: hear the answer without "hey duck"
+                log("listening for your answer")
+                self.follow_up = True
+                self.recorder = UtteranceRecorder(b"", clock=self.clock)
+                self.on_listening(True)
+            else:
+                self.on_turn(False)
             self.sending = False
 
     def _wait_until_quiet(self):

@@ -26,7 +26,11 @@ const MEMORY_RECALL_LIMIT = 500;      // newest N memories go to Claude for a re
 const VOICE_MAX_BYTES = 1024 * 1024;  // ~30 s of 16 kHz mono WAV
 // Voice reminders ("hey duck, remind me in 5 days to ..."): saved in `reminders`, spoken when due.
 const VOICE_REMINDER_TICK_MS = 15 * 1000;
-const LATE_REMINDER_MS = 10 * 60 * 1000;   // later than this (you were away) -> "earlier you asked me to..."
+const LATE_REMINDER_MS = 10 * 60 * 1000;
+// "Remind me to drink water" -> "Okay but when?": the duck listens again without the wake word, and the
+// answer ("in two minutes") is read together with the first request. userId -> { heard, until }.
+const FOLLOW_UP_MS = 30 * 1000;
+const voiceFollowUps = new Map();   // later than this (you were away) -> "earlier you asked me to..."
 const TTS_SAMPLE_RATE = 22050;
 const PORT = Number(process.env.RELAY_PORT ?? 8080);
 for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN })) {
@@ -417,7 +421,7 @@ async function handleNudge(req, res) {
       apiKey: ANTHROPIC_API_KEY, model: ANTHROPIC_MODEL,
       kind: input.kind, tone: input.tone, facts: input.facts, name: activeName,
     });
-    if (!text) return res.writeHead(502).end();
+    if (!text) { log('nudge failed: empty reply'); return res.writeHead(502).end(); }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ text }));
     log(`nudge ${input.kind}: "${text.slice(0, 60)}"`);
@@ -527,7 +531,14 @@ async function handleVoice(req, res) {
     if (!heard) return voiceReply(res, 200, { intent: 'other', heard, say: "Sorry, I didn't catch that." });
 
     const now = Date.now();
-    const meant = await understand({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, transcript: heard, name, now, tz: MEMORY_TZ });
+    const pending = voiceFollowUps.get(userId);
+    voiceFollowUps.delete(userId);
+    const transcript = pending && pending.until > now ? `${pending.heard} ... ${heard}` : heard;
+    const meant = await understand({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, transcript, name, now, tz: MEMORY_TZ });
+    const askBack = (say) => {   // a question back: remember what was said, listen for the answer
+      voiceFollowUps.set(userId, { heard: transcript, until: Date.now() + FOLLOW_UP_MS });
+      return voiceReply(res, 200, { intent: 'remind', heard, say, listen: true });
+    };
 
     if (meant.intent === 'remember' && meant.memory) {
       const { error } = await supabase.from('memories').insert({ user_id: userId, text: meant.memory, source: 'voice' });
@@ -558,9 +569,9 @@ async function handleVoice(req, res) {
     }
 
     if (meant.intent === 'remind') {
-      if (!meant.reminder) return voiceReply(res, 200, { intent: 'remind', heard, say: 'Remind you about what, bestie?' });
+      if (!meant.reminder) return askBack('Remind you about what, bestie?');
       const due = parseRemindAt(meant.remind_at, MEMORY_TZ, now);
-      if (!due) return voiceReply(res, 200, { intent: 'remind', heard, say: 'Okay but when? Try, hey duck, remind me tomorrow at 9 to call mom.' });
+      if (!due) return askBack(`Okay but when should I remind you to ${meant.reminder}?`);
       const { error } = await supabase.from('reminders')
         .insert({ user_id: userId, text: meant.reminder, due_at: new Date(due).toISOString(), source: 'voice' });
       if (error) {
@@ -592,7 +603,7 @@ async function handleVoice(req, res) {
       return voiceReply(res, 200, { intent: 'focus', heard, focus: meant.focus, say: '', quiet: true });
     }
 
-    return voiceReply(res, 200, { intent: 'other', heard, say: "Wait, what? Say that again. You can say remember, remind me, or ask what's on your calendar." });
+    return voiceReply(res, 200, { intent: 'other', heard, say: meant.reply || "Wait, what? Say that again. You can say remember, remind me, or ask what's on your calendar." });
   } catch (e) {
     log('voice failed', e.message);
     return voiceReply(res, e.name === 'TimeoutError' ? 504 : 502, { intent: 'error', heard: '', say: 'My brain is buffering. Try again in a sec.' });

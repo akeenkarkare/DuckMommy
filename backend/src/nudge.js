@@ -69,11 +69,14 @@ export async function writeNudge({ apiKey, model, kind, tone, facts, name, fetch
   const r = await fetchImpl(API_URL, {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens: 120, temperature: 1, system, messages: [{ role: 'user', content: user }] }),
+    // No temperature, and room to think: newer models always think and reject temperature, and
+    // thinking counts toward max_tokens (120 came back empty -> the Pi's 502 "AI lines unavailable").
+    body: JSON.stringify({ model, max_tokens: 4096, output_config: { effort: 'low' }, system, messages: [{ role: 'user', content: user }] }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!r.ok) throw new Error(`Anthropic HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const data = await r.json();
+  if (data.stop_reason === 'max_tokens') throw new Error('Anthropic reply cut off (max_tokens)');
   const text = (data.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join(' ');
   return cleanLine(text);
 }

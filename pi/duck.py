@@ -59,6 +59,8 @@ DEFAULT_SETTINGS = {
     "sentry_enabled": False, "quack_enabled": True, "sign_enabled": True, "sound_alerts_enabled": True,
     "coach_enabled": True, "coach_interval_min": 25, "coach_tone": "coach",
 }
+# coach lines that answer something you just asked for (by voice, sign or dashboard): never held back
+ANSWER_KINDS = {"focus_start", "break_start", "finish", "more_time", "time_left"}
 IDLE_CAMERA_FPS = 3       # camera-only presence/sentry while away
 ULTRASONIC_HZ = 10
 STATUS_EVERY_S = 5        # one-line heartbeat so you can see it working
@@ -81,6 +83,9 @@ class Duck:
             tts_url, nudge_url = http + "/tts", http + "/nudge"
         self.voice_url = (http + "/voice") if relay else None
         self.at_desk = False   # set by on_presence; "hey duck" only listens while someone is here
+        self.talking = False   # a "hey duck" turn is on: hold other lines, pause sign reading
+        self._held: list[str] = []
+        self._held_lock = threading.Lock()
         self.voice = Voice(self.settings, tts_url, token)
         self.coach = Coach(self.settings)
         self.coach_lock = threading.Lock()   # touched by the main loop and the relay thread
@@ -119,8 +124,8 @@ class Duck:
         self.voice.prefetch([self.settings.get(k) for k in ("posture_message", "sentry_message", "presence_message")])
 
     def on_command(self, c: dict):
-        if c.get("type") == "say":
-            self.voice.say(c.get("text", ""))
+        if c.get("type") == "say":    # due reminders, calendar heads-ups, dashboard "say it"
+            self.say(c.get("text", ""))
         elif c.get("type") == "quack":
             self.voice.quack()
         elif c.get("type") == "coach":     # dashboard focus buttons: start_focus / break / finish / ...
@@ -140,8 +145,8 @@ class Duck:
         for a in actions:
             if a[0] == "event":
                 self.emit(a[1], a[2])
-            elif a[0] == "speak":
-                self.voice.say(a[1])
+            elif a[0] == "speak":    # posture / calibration / sentry / signs: repeat on their own
+                self.say(a[1], drop_if_talking=True)
             elif a[0] == "led":
                 self.led.show(a[1])
             elif a[0] == "command":
@@ -164,9 +169,29 @@ class Duck:
 
     def _coach_said(self, kind: str, facts: dict, text: str, source: str):
         """LineWriter thread: the line is ready. Speak it and tell the dashboard."""
-        self.voice.say(text)
+        # "let's lock in" by voice -> the coach's answer IS the reply; other coach lines wait for the turn
+        self.say(text, now=kind in ANSWER_KINDS)
         self.emit("coach", {"kind": kind, "text": text, "source": source, "item": facts.get("item"),
                             "focus_minutes_left": facts.get("focus_minutes_left")})
+
+    # ── speaking without talking over a "hey duck" conversation ───────────────
+    def say(self, text: str, drop_if_talking: bool = False, now: bool = False):
+        with self._held_lock:
+            if self.talking and not now:
+                if not drop_if_talking and text and text not in self._held:
+                    self._held = (self._held + [text])[-3:]
+                return
+        self.voice.say(text)
+
+    def on_turn(self, on: bool):
+        """memory/talk.py: a conversation started (wake word) or ended (reply played)."""
+        with self._held_lock:
+            self.talking = on
+            held = [] if on else self._held
+            if not on:
+                self._held = []
+        for text in held:   # what the coach / reminders wanted to say meanwhile
+            self.voice.say(text)
 
     # ── pressure sensor (gpiozero callback thread) ──────────────────────────
     def on_press(self):
@@ -190,7 +215,7 @@ class Duck:
         from memory.talk import TalkToDuck
         talk = TalkToDuck(WakeWord(), self.voice, self.voice_url, self.env.get("DUCK_TOKEN"),
                           on_listening=lambda on: self.led.show("listening" if on else "heard"),
-                          present=lambda: self.at_desk)
+                          present=lambda: self.at_desk, on_turn=self.on_turn)
         log('talk to duck: "hey duck, remember ...", "what did I tell you ...?", "remind me in 5 days to ...", '
             '"what\'s on my calendar?", "let\'s lock in"')
         return talk.threaded()
@@ -299,7 +324,7 @@ class Duck:
             if ev == "arrive":
                 self.emit("presence", value)
                 if self.settings.get("presence_message"):
-                    self.voice.say(self.settings["presence_message"])
+                    self.say(self.settings["presence_message"])
                 motion.reset(now)
                 slouches = 0
                 with self.coach_lock:
@@ -357,7 +382,8 @@ class Duck:
                         slouches += sum(1 for a in posture if a[0] == "event" and a[2].get("state") == "slouch"
                                         and a[2].get("slouch_duration_s", 0) <= first)
                         self.act(posture)
-                        if words:   # every frame: word signs are fast movements
+                        if words and not self.talking:   # every frame: word signs are fast movements
+                            # (paused while you talk to the duck: talking hands aren't signs)
                             self.act(words.update(now, body))
                         still_s = motion.still_for(now)
                         if still_s >= motion.timeout_s + IDLE_AWAY_AFTER_S:

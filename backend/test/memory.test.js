@@ -13,7 +13,7 @@ const claudeReply = (text, extra = {}) => async (url, init) => {
 test('understand: garbled remember -> clean sentence, sends the structured-output schema', async () => {
   const fetchImpl = claudeReply(JSON.stringify({ intent: 'remember', memory: 'My keys are in the blue drawer.', question: '' }));
   const out = await understand({ apiKey: 'k', model: 'claude-opus-5-5', transcript: 'um remember like my keys r in the blew draw', fetchImpl });
-  assert.deepEqual(out, { intent: 'remember', memory: 'My keys are in the blue drawer.', question: '', reminder: '', remind_at: '', focus: '' });
+  assert.deepEqual(out, { intent: 'remember', memory: 'My keys are in the blue drawer.', question: '', reminder: '', remind_at: '', focus: '', reply: '' });
   assert.equal(last.body.model, 'claude-opus-5-5');
   assert.equal(last.body.max_tokens, 4096);
   assert.equal(last.body.output_config.format.type, 'json_schema');
@@ -146,4 +146,15 @@ test('answerAgenda returns a cleaned spoken line', async () => {
   const text = await answerAgenda({ apiKey: 'k', model: 'm', question: 'q', items: [], reminders: [], now: SAT_7PM, tz: NY,
     fetchImpl: claudeReply('"**Nothing** on your calendar tomorrow. 🦆"') });
   assert.equal(text, 'Nothing on your calendar tomorrow.');
+});
+
+test('understand: small talk gets a reply; other intents never carry one', async () => {
+  let out = await understand({ apiKey: 'k', model: 'm', transcript: 'all right ask it something hey doc how are you', tz: NY,
+    fetchImpl: claudeReply('{"intent":"other","memory":"","question":"","reminder":"","remind_at":"","focus":"","reply":"\\"Lowkey thriving, bestie. You?\\""}') });
+  assert.deepEqual([out.intent, out.reply], ['other', 'Lowkey thriving, bestie. You?']);
+  assert.match(last.body.system, /hey doc/);
+  assert.match(last.body.system, /ignore everything up to and including the last wake phrase/);
+  out = await understand({ apiKey: 'k', model: 'm', transcript: 'x', tz: NY,
+    fetchImpl: claudeReply('{"intent":"remember","memory":"Keys in drawer.","question":"","reminder":"","remind_at":"","focus":"","reply":"sure"}') });
+  assert.equal(out.reply, '');
 });

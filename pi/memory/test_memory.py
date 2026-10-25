@@ -107,19 +107,22 @@ class FakeWake:
 
 
 class TestTalkToDuck(unittest.TestCase):
-    def make(self, fire_on=3, reply=None, fail=False):
+    def make(self, fire_on=3, reply=None, fail=False, replies=None):
         self.posted = []
+        replies = list(replies or [])
 
         def post(url, token, wav):
             self.posted.append((url, token, wav))
             if fail:
                 raise OSError("relay down")
+            if replies:
+                return replies.pop(0)
             return reply or {"intent": "remember", "heard": "hey duck remember x", "say": "Got it, I'll remember that."}
 
-        self.clock, self.voice, self.leds = Clock(), FakeVoice(), []
+        self.clock, self.voice, self.leds, self.turns = Clock(), FakeVoice(), [], []
         self.wake = FakeWake(fire_on)
         talk = TalkToDuck(self.wake, self.voice, "http://relay/voice", "tok",
-                          on_listening=self.leds.append, post=post, clock=self.clock)
+                          on_listening=self.leds.append, post=post, clock=self.clock, on_turn=self.turns.append)
         talk.say_wait_s = 0
         return talk
 
@@ -147,6 +150,35 @@ class TestTalkToDuck(unittest.TestCase):
         self.assertAlmostEqual(seconds, min(PREROLL_S, 3 * CHUNK_S) + 3 * CHUNK_S + len(quiet) * CHUNK_S, places=2)
         self.assertEqual(self.voice.said, ["Got it, I'll remember that."])
         self.assertEqual(self.wake.resets, 1)
+
+    def test_turn_brackets_the_conversation(self):
+        talk = self.make(fire_on=3)
+        quiet = [hush()] * (math.ceil(END_SILENCE_S / CHUNK_S) + 1)
+        self.feed_all(talk, [hush(), tone(), tone()] + [tone()] * 3 + quiet)
+        self.assertEqual(self.turns, [True, False])
+
+    def test_question_back_listens_without_wake_word(self):
+        ask = {"intent": "remind", "heard": "remind me to drink water", "say": "Okay but when?", "listen": True}
+        done = {"intent": "remind", "heard": "in two minutes", "say": "Bet."}
+        talk = self.make(fire_on=3, replies=[ask, done])
+        quiet = [hush()] * (math.ceil(END_SILENCE_S / CHUNK_S) + 1)
+        self.feed_all(talk, [hush(), tone(), tone()] + [tone()] * 3 + quiet)
+        self.assertEqual(self.turns, [True])          # still in the conversation
+        self.assertEqual(self.leds, [True, False, True])
+        self.feed_all(talk, [tone()] * 3 + quiet)     # the answer, no "hey duck"
+        self.assertEqual(len(self.posted), 2)
+        self.assertEqual(self.voice.said, ["Okay but when?", "Bet."])
+        self.assertEqual(self.turns, [True, False])
+        self.assertEqual(self.wake.resets, 1)
+
+    def test_no_answer_to_question_is_dropped(self):
+        ask = {"intent": "remind", "heard": "remind me", "say": "About what?", "listen": True}
+        talk = self.make(fire_on=3, replies=[ask])
+        quiet = [hush()] * (math.ceil(END_SILENCE_S / CHUNK_S) + 1)
+        self.feed_all(talk, [hush(), tone(), tone()] + [tone()] * 3 + quiet)
+        self.feed_all(talk, [hush()] * (math.ceil(NO_SPEECH_S / CHUNK_S) + 1))
+        self.assertEqual(len(self.posted), 1)
+        self.assertEqual(self.turns, [True, False])
 
     def test_ignores_itself_while_talking(self):
         talk = self.make(fire_on=1)

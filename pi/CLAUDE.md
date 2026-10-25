@@ -109,7 +109,9 @@ Each card: **needs** (the data it looks at) · **gets it from** · **looks for**
   `POST /voice`. The relay transcribes (ElevenLabs), Claude works out what was meant and returns the line to say:
   remember / recall (Supabase `memories`), **remind** ("remind me in 5 days to…" → `reminders`; the relay says it
   when due, once you're at the desk), **agenda** ("what's on my calendar tomorrow?"), **focus** ("let's lock in" →
-  the coach's timer; reply is `quiet` so the coach speaks instead). Ignored while the duck is talking.
+  the coach's timer; reply is `quiet` so the coach speaks instead), anything else gets a short Gen Z reply. Ignored while the duck is talking.
+- **One turn at a time:** from the wake word until the reply has played, `Duck.say` holds other lines (coach, reminders; posture
+  prompts are dropped, they repeat) and sign reading pauses. A reply with `listen: true` ("okay but when?") reopens the mic without the wake word.
 - **Files:** `memory/wake.py` (Vosk), `memory/segment.py` (when to stop recording), `memory/talk.py` (glue),
   `memory/run.py` (try it alone, or `--text` without a mic). Off with `--no-talk`.
 
