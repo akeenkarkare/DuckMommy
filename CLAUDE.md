@@ -51,7 +51,7 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 - **Stack:** a Node WS relay plus the Next.js dashboard. Supabase handles Auth and the `profiles` and `settings` tables, all tied to the auth user with RLS. Schema: `/backend/supabase/schema.sql`.
 - **Dashboard:** register and login pages, then the live event stream (with a 5-minute in-memory buffer on the relay, so it survives a refresh) and per-user settings (messages, volume, posture severity). Settings are saved to Supabase on change, and the relay pushes them to the Pi. See `/backend/CLAUDE.md` and `/dashboard/CLAUDE.md`.
 - **Voice:** spoken messages are free text, read out by TTS on the Pi in the duck's own voice.
-- **Network:** for the demo, the Pi is connected directly to the laptop running the relay.
+- **Network:** the relay + dashboard run on the **server 209.182.234.33** (`./dev.sh --prod`; site http://209.182.234.33:3000, relay ws://209.182.234.33:8080). The **Pi is 192.168.1.67** (`sbuhacks26`) and runs only `duck.py`, with `RELAY_URL=ws://209.182.234.33:8080` in `pi/.env`.
 - **One duck:** there is exactly one duck and no device management. The Pi authenticates to the relay with a shared `DUCK_TOKEN` from `.env`. The relay sends the duck's events to the **active user** and pushes that user's settings to the duck (see `/backend/CLAUDE.md`).
 - **Event shape:**
   `{ user_id, type: "posture"|"pat"|"sentry"|"focus"|"presence"|"sign"|"sound"|"coach", value, ts }`
@@ -72,11 +72,11 @@ Each folder may get its own short CLAUDE.md with run/test commands. Keep this ro
 - Sign to Duck data + training: see `pi/asl/README.md` (`duck.py` loads the model).
 - Sentry: `cd pi/sentry && python3 run.py --trig <BCM> --echo <BCM>` (or `--no-ultrasonic`). Night vision is automatic. See `pi/sentry/README.md`.
 - Camera preview (dev only): laptop `pi/camera/view.sh`, then Pi `pi/camera/stream.sh <laptop-ip>`. See `pi/camera/README.md`.
-- **Website (relay + dashboard together): `./dev.sh`** → http://192.168.1.67:3000 · `./dev.sh --fake-duck` adds the simulated duck (no Pi needed) · **on a server use `./dev.sh --prod`** (Next 16 dev mode won't hydrate for browsers opening it by IP/hostname)
+- **Website (relay + dashboard together): `./dev.sh`** → http://localhost:3000 · `./dev.sh --fake-duck` adds the simulated duck (no Pi needed) · **on a server use `./dev.sh --prod`** (Next 16 dev mode won't hydrate for browsers opening it by IP/hostname)
 - Backend: `cd backend && npm run dev` · tests: `npm test`
 - Supabase: run `backend/supabase/migrations/003_coach_and_calendar.sql` once for the coach + calendar settings.
 - Camera won't start: `cd pi && ./doctor.sh`
-- Dashboard: `cd dashboard && npm run dev` → http://192.168.1.67:3000
+- Dashboard: `cd dashboard && npm run dev` → http://localhost:3000
 
 ## Definition of done for the demo
 A judge sits down and slouches. Within a few seconds the duck speaks, and the slouch appears on that judge's dashboard graph. Patting the duck makes it quack. Tapping a phone on the beak opens the focus flow.

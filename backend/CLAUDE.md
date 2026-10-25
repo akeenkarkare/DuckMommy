@@ -73,7 +73,7 @@ None right now.
 
 ## Commands
 - Install: `npm install` (in `/backend`)
-- Relay: `npm run dev` (auto-restarts on change) or `npm run relay` · health check: `curl 192.168.1.67:8080/health`
+- Relay: `npm run dev` (auto-restarts on change) or `npm run relay` · health check: `curl 209.182.234.33:8080/health`
 - Fake duck: `npm run duck` (realistic pacing) or `npm run duck:fast` (4× speed)
 - Test: `npm test` (node's built-in runner: iCal parsing/recurrence/DST, agenda merge, nudge prompt + cleanup)
 
@@ -99,9 +99,9 @@ The Calendar tab's **Connect Google Calendar** goes through Auth0's Google login
 1. **Google Cloud** (console.cloud.google.com): create a project → enable the **Google Calendar API** → OAuth consent screen (External; add your Gmail under *Test users*; scope `.../auth/calendar.readonly`) → Credentials → **OAuth client ID** (Web application). Authorized redirect URI: `https://<AUTH0_DOMAIN>/login/callback`. Copy the client ID and secret.
 2. **Auth0** (manage.auth0.com):
    - Authentication → Social → **Google / Gmail**: paste the Google client ID and secret, tick **Offline Access** (and Calendar if it's listed). Save.
-   - Applications → **Create application** → Regular Web Application. Settings: **Allowed Callback URLs** = `http://192.168.1.67:8080/auth/google/callback`. Connections tab: enable **google-oauth2**.
+   - Applications → **Create application** → Regular Web Application. Settings: **Allowed Callback URLs** = `http://209.182.234.33:8080/auth/google/callback`. Connections tab: enable **google-oauth2**.
    - Applications → APIs → **Auth0 Management API** → Machine to Machine Applications → authorize the same app with **read:users** and **read:user_idp_tokens**.
-3. **backend/.env**: `AUTH0_DOMAIN` (e.g. `duckdaddy.us.auth0.com`), `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and if not on 192.168.1.67, `RELAY_PUBLIC_URL` / `DASHBOARD_URL`. Restart the relay; `/health` shows `google_calendar: true`.
+3. **backend/.env**: `AUTH0_DOMAIN` (e.g. `duckdaddy.us.auth0.com`), `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `RELAY_PUBLIC_URL=http://209.182.234.33:8080` and `DASHBOARD_URL=http://209.182.234.33:3000`. Restart the relay; `/health` shows `google_calendar: true`.
 4. **Supabase**: run `supabase/migrations/004_google_calendar.sql` (and `003_coach_and_calendar.sql` if it hasn't been run yet).
 
 While the Google consent screen is in *Testing* mode, Google expires refresh tokens after 7 days: just press Connect again (or publish the app).

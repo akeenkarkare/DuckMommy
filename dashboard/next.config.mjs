@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // The dashboard is served from the server (the Pi, 192.168.1.67) and opened by IP from
-  // other machines on the LAN. Next blocks cross-origin dev requests by default.
-  allowedDevOrigins: ['192.168.1.67'],
+  // Only matters for `npm run dev` opened by IP (the server runs `./dev.sh --prod`, which doesn't need it).
+  // Next blocks cross-origin dev requests by default. 209.182.234.33 = server, 192.168.1.67 = the Pi.
+  allowedDevOrigins: ['209.182.234.33', '192.168.1.67'],
 };
 
 export default nextConfig;
