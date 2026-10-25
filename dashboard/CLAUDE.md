@@ -20,6 +20,7 @@ Web frontend. Each logged-in user sees and controls only their own duck. Root ru
    - **Sign to Duck card:** latest ASL translations, in large text
    - **Test controls:** e.g. a "say it now" button, sent through the relay to the duck
    - **Focus & coach** panel (the duck's back): focus session buttons (sent as `command {type:"coach", name}`), what the duck said (`coach` events), coach on/off, check-in length, personality (gentle / coach / savage)
+   - **Nest** panel (`components/NestPanel.js`): the user's saved memories from the `memories` table (newest first, search, add a typed note, forget one). Reloads on a live `memory` event; shows the duck's last recall answer; says where speech goes (ElevenLabs, Anthropic).
    - **Calendar** panel: "Up next" from the relay's `agenda` message, feed errors, the calendar links field (`settings.calendar_urls`), refresh (`agenda_refresh`)
 4. **Live view** (Camera panel, `components/LiveView.js`): opt-in "Watch live" shows the duck's annotated camera frames from the relay (`useRelay().watch`). Any logged-in user the duck is with (the relay's `VIDEO_VIEWERS` can restrict it); stops when closed; never recorded.
 

@@ -10,6 +10,7 @@
 # pip-only (not available at a usable version via apt)
 mediapipe>=1.0          # 1.x has the Tasks API + HolisticLandmarker (Sign to Duck)
 websockets>=12.0
+vosk>=0.3.45          # offline "hey duck" wake word (pi/memory)
 
 # On the Pi: numpy and opencv come from apt via --system-site-packages.
 # On a laptop / CI (no apt opencv), install these instead:

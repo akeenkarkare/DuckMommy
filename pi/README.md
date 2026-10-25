@@ -60,4 +60,4 @@ one sign at a time with the hands lowered in between. It needs sign data and a t
 first: see `asl/README.md`. Without one, everything else runs and nothing is recognised.
 
 ## Tests
-`python3 -m unittest` in `asl/`, `sounds/`, `sentry/`, `posture/`, `coach/`, `motion/`; `python3 -m unittest test_presence` in `shared/`.
+`python3 -m unittest` in `asl/`, `sounds/`, `sentry/`, `posture/`, `coach/`, `motion/`, `memory/`; `python3 -m unittest test_presence` in `shared/`.

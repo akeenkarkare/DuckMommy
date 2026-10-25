@@ -2,6 +2,7 @@
 
 Audio comes from `arecord` (alsa-utils, preinstalled on Raspberry Pi OS), 16 kHz mono.
 Every HOP_S we classify the last WINDOW_S and hand (label, score) pairs to a callback.
+The raw chunks can also go to on_audio (memory/talk.py: "hey duck"), so the mic is opened once.
 Model: pi/models/yamnet.tflite (see pi/get_models.sh).
 
 Find your USB mic with `arecord -l`, then set MIC_DEVICE in pi/.env, e.g. plughw:CARD=Device,DEV=0.
@@ -28,8 +29,10 @@ def log(msg: str):
 
 
 class SoundListener:
-    def __init__(self, on_categories, device: str = "default", model_path: Path = DEFAULT_MODEL):
+    def __init__(self, on_categories, device: str = "default", model_path: Path = DEFAULT_MODEL, on_audio=None):
         self.on_categories, self.device, self.model_path = on_categories, device, model_path
+        self.on_audio = on_audio   # raw 16 kHz mono S16_LE chunks (HOP_S each), on the mic thread
+        self.classify = True
 
     def start(self) -> bool:
         if not shutil.which("arecord"):
@@ -37,17 +40,21 @@ class SoundListener:
             return False
         if not Path(self.model_path).exists():
             log(f"{self.model_path} missing (run pi/get_models.sh); sound alerts off")
-            return False
+            if self.on_audio is None:
+                return False
+            self.classify = False
         threading.Thread(target=self._run, daemon=True, name="mic").start()
         return True
 
     def _run(self):
         import numpy as np
-        from mediapipe.tasks.python import BaseOptions, audio
-        from mediapipe.tasks.python.components import containers
 
-        classifier = audio.AudioClassifier.create_from_options(audio.AudioClassifierOptions(
-            base_options=BaseOptions(model_asset_path=str(self.model_path)), max_results=5, score_threshold=0.15))
+        classifier = None
+        if self.classify:
+            from mediapipe.tasks.python import BaseOptions, audio
+            from mediapipe.tasks.python.components import containers
+            classifier = audio.AudioClassifier.create_from_options(audio.AudioClassifierOptions(
+                base_options=BaseOptions(model_asset_path=str(self.model_path)), max_results=5, score_threshold=0.15))
         window, hop = int(RATE * WINDOW_S), int(RATE * HOP_S)
         while True:
             proc = subprocess.Popen(["arecord", "-q", "-D", self.device, "-f", "S16_LE", "-r", str(RATE),
@@ -59,6 +66,13 @@ class SoundListener:
                     chunk = proc.stdout.read(hop * 2)
                     if not chunk:
                         break
+                    if self.on_audio is not None:
+                        try:
+                            self.on_audio(chunk)
+                        except Exception as e:   # never let talk-to-duck kill the sound alerts
+                            log(f"on_audio failed: {e}")
+                    if classifier is None:
+                        continue
                     buf = np.concatenate([buf, np.frombuffer(chunk, dtype="<i2").astype(np.float32) / 32768.0])[-window:]
                     if len(buf) < window:
                         continue

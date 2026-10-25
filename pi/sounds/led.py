@@ -16,6 +16,8 @@ PATTERNS = {
     "notification": (0.3, 0.3, 3),     # three blinks
     "calling": (2.0, 0.5, 3),          # long glows
     "sign": (0.1, 0.1, 2),             # quick double blink: word sign recognised (pi/asl)
+    "listening": (0.25, 0.25, 30),     # "hey duck" heard: blinking while it listens (stopped by "heard")
+    "heard": (0.05, 0.05, 1),          # done listening (replaces the listening blink)
 }
 
 

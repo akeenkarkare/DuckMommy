@@ -14,10 +14,16 @@ import { authorizeUrl, exchangeCode, fetchGoogleEvents, googleConfigured } from 
 import { localTimeZone } from './ics.js';
 import { daySummary, dueReminders } from './reminders.js';
 import { writeNudge } from './nudge.js';
+import { answerRecall, transcribe, understand } from './memory.js';
 
 const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, ANTHROPIC_API_KEY } = process.env;
 const ELEVENLABS_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_flash_v2_5';
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
+// Memory locker (POST /voice): Claude cleans up what was said and answers "what did I tell you...".
+const MEMORY_MODEL = process.env.MEMORY_MODEL || ANTHROPIC_MODEL;   // fast model: the duck answers out loud
+const MEMORY_TZ = process.env.MEMORY_TZ || localTimeZone();
+const MEMORY_RECALL_LIMIT = 500;      // newest N memories go to Claude for a recall question (~15k tokens)
+const VOICE_MAX_BYTES = 1024 * 1024;  // ~30 s of 16 kHz mono WAV
 const TTS_SAMPLE_RATE = 22050;
 const PORT = Number(process.env.RELAY_PORT ?? 8080);
 for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN })) {
@@ -27,7 +33,7 @@ for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TO
 const BUFFER_MS = 5 * 60 * 1000;
 const AUTH_TIMEOUT_MS = 5000;
 const HEARTBEAT_MS = 15000;
-const EVENT_TYPES = new Set(['posture', 'pat', 'sentry', 'focus', 'presence', 'sign', 'sound', 'coach']);
+const EVENT_TYPES = new Set(['posture', 'pat', 'sentry', 'focus', 'presence', 'sign', 'sound', 'coach', 'memory']);
 // Pushed to the Pi. calendar_urls is deliberately NOT here: the links are secret and only the relay fetches them.
 const SETTINGS_FIELDS = [
   'volume', 'posture_message', 'sentry_message', 'presence_message',
@@ -457,13 +463,97 @@ setInterval(() => {
   }
 }, REMINDER_TICK_MS);
 
+// ─── Memory locker: "hey duck, remember ..." / "hey duck, what did I tell you ..." ─
+// The duck records what was said after the wake word and posts it as audio/wav (or JSON {text}
+// for testing). We transcribe it, let Claude work out what was meant, then save to or search the
+// active user's `memories` table. Response: { say, intent, heard } — the duck speaks `say`.
+function voiceReply(res, status, body) {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(JSON.stringify(body));
+}
+
+function emitToActive(type, value) {
+  if (!activeUserId) return;
+  const event = { user_id: activeUserId, type, value, ts: Date.now() };
+  recentEvents(activeUserId).push(event);
+  sendToUser(activeUserId, { type: 'event', event });
+}
+
+async function handleVoice(req, res) {
+  const auth = String(req.headers.authorization ?? '');
+  if (!tokenMatches(auth.replace(/^Bearer /, ''))) return res.writeHead(401).end();
+  if (!ANTHROPIC_API_KEY) return res.writeHead(503).end('Anthropic not configured');
+
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > VOICE_MAX_BYTES) { res.writeHead(413).end(); return void req.destroy(); }
+    chunks.push(chunk);
+  }
+  const body = Buffer.concat(chunks);
+  const userId = activeUserId;   // pin both: the active user could change while we wait on the APIs
+  const name = activeName;
+  if (!userId) return voiceReply(res, 200, { intent: 'none', heard: '', say: 'Open the dashboard first so I know who you are.' });
+
+  try {
+    let heard;
+    if (String(req.headers['content-type'] ?? '').startsWith('application/json')) {
+      let parsed;
+      try { parsed = JSON.parse(body.toString()); } catch { return res.writeHead(400).end(); }
+      heard = String(parsed?.text ?? '').trim().slice(0, 1000);
+    } else {
+      if (!ELEVENLABS_API_KEY) return res.writeHead(503).end('ElevenLabs not configured');
+      heard = await transcribe({ apiKey: ELEVENLABS_API_KEY, wav: body });
+    }
+    log(`voice heard ${heard.length} chars`);   // not the words: they can be private
+    if (!heard) return voiceReply(res, 200, { intent: 'other', heard, say: "Sorry, I didn't catch that." });
+
+    const meant = await understand({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, transcript: heard, name });
+
+    if (meant.intent === 'remember' && meant.memory) {
+      const { error } = await supabase.from('memories').insert({ user_id: userId, text: meant.memory, source: 'voice' });
+      if (error) {
+        log('memory save failed', error.message);
+        return voiceReply(res, 200, { intent: 'remember', heard, say: "Sorry, I couldn't save that one." });
+      }
+      if (userId === activeUserId) emitToActive('memory', { action: 'saved', text: meant.memory });
+      log('memory saved');
+      return voiceReply(res, 200, { intent: 'remember', heard, memory: meant.memory, say: "Got it, I'll remember that." });
+    }
+
+    if (meant.intent === 'recall') {
+      const { data, error } = await supabase.from('memories').select('text, created_at')
+        .eq('user_id', userId).order('created_at', { ascending: false }).limit(MEMORY_RECALL_LIMIT);
+      if (error) {
+        log('memory load failed', error.message);
+        return voiceReply(res, 200, { intent: 'recall', heard, say: "Sorry, I can't reach my notes right now." });
+      }
+      const question = meant.question || heard;
+      const answer = await answerRecall({
+        apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, question,
+        memories: (data ?? []).reverse(), tz: MEMORY_TZ, name,
+      });
+      if (userId === activeUserId) emitToActive('memory', { action: 'recall', question, answer });
+      log('memory recall answered');
+      return voiceReply(res, 200, { intent: 'recall', heard, say: answer || "I don't have a note about that." });
+    }
+
+    return voiceReply(res, 200, { intent: 'other', heard, say: "Sorry, I didn't catch that. Say remember, then the thing." });
+  } catch (e) {
+    log('voice failed', e.message);
+    return voiceReply(res, e.name === 'TimeoutError' ? 504 : 502, { intent: 'error', heard: '', say: 'My brain is offline right now, try again in a bit.' });
+  }
+
+}
 const server = createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/tts') return void handleTts(req, res);
   if (req.method === 'POST' && req.url === '/nudge') return void handleNudge(req, res);
+  if (req.method === 'POST' && req.url === '/voice') return void handleVoice(req, res);
   if (req.method === 'GET' && req.url.startsWith('/auth/google/callback')) return void handleGoogleCallback(req, res);
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID), coach_ai: !!ANTHROPIC_API_KEY, google_calendar: googleConfigured(GOOGLE_ENV), live_view: VIDEO_VIEWERS.length > 0, watching: watchers().length }));
+    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID), coach_ai: !!ANTHROPIC_API_KEY, memory: !!(ANTHROPIC_API_KEY && ELEVENLABS_API_KEY), google_calendar: googleConfigured(GOOGLE_ENV), live_view: VIDEO_VIEWERS.length > 0, watching: watchers().length }));
   }
   res.writeHead(404).end();
 });
