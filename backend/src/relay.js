@@ -14,7 +14,8 @@ import { authorizeUrl, exchangeCode, fetchGoogleEvents, googleConfigured } from 
 import { localTimeZone } from './ics.js';
 import { daySummary, dueReminders } from './reminders.js';
 import { writeNudge } from './nudge.js';
-import { answerAgenda, answerRecall, friendlyWhen, parseRemindAt, transcribe, understand } from './memory.js';
+import { answerAgenda, answerRecall, answerWeather, friendlyWhen, parseRemindAt, transcribe, understand } from './memory.js';
+import { getWeather, weatherLine } from './weather.js';
 
 const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, ANTHROPIC_API_KEY } = process.env;
 const ELEVENLABS_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_flash_v2_5';
@@ -599,6 +600,28 @@ async function handleVoice(req, res) {
       if (userId === activeUserId) emitToActive('memory', { action: 'agenda', question, answer });
       log('agenda question answered');
       return voiceReply(res, 200, { intent: 'agenda', heard, say: answer || "Nothing on your calendar for that. You're free, bestie." });
+    }
+
+    if (meant.intent === 'weather') {   // Open-Meteo numbers, Claude says them (template if Claude is down)
+      let weather;
+      try {
+        weather = await getWeather({ place: meant.place });
+      } catch (e) {
+        log('weather failed', e.message);
+        return voiceReply(res, 200, { intent: 'weather', heard, say: "The weather isn't loading right now. Try again in a sec." });
+      }
+      if (!weather) return voiceReply(res, 200, { intent: 'weather', heard, say: `I couldn't find ${meant.place} on the map, bestie.` });
+      const question = meant.question || heard;
+      let answer = '';
+      try {
+        answer = await answerWeather({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, question, weather, now, tz: MEMORY_TZ, name });
+      } catch (e) {
+        log('weather answer failed, using the template:', e.message);
+      }
+      answer = answer || weatherLine(weather);
+      if (userId === activeUserId) emitToActive('memory', { action: 'weather', question, answer });
+      log('weather answered for', weather.place);
+      return voiceReply(res, 200, { intent: 'weather', heard, say: answer });
     }
 
     if (meant.intent === 'sentry') {   // "hey duck, sentry mode on": same setting as the dashboard toggle

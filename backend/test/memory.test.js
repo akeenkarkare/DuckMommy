@@ -13,7 +13,7 @@ const claudeReply = (text, extra = {}) => async (url, init) => {
 test('understand: garbled remember -> clean sentence, sends the structured-output schema', async () => {
   const fetchImpl = claudeReply(JSON.stringify({ intent: 'remember', memory: 'My keys are in the blue drawer.', question: '' }));
   const out = await understand({ apiKey: 'k', model: 'claude-opus-5-5', transcript: 'um remember like my keys r in the blew draw', fetchImpl });
-  assert.deepEqual(out, { intent: 'remember', memory: 'My keys are in the blue drawer.', question: '', reminder: '', remind_at: '', focus: '', sentry: '', reply: '' });
+  assert.deepEqual(out, { intent: 'remember', memory: 'My keys are in the blue drawer.', question: '', reminder: '', remind_at: '', focus: '', sentry: '', place: '', reply: '' });
   assert.equal(last.body.model, 'claude-opus-5-5');
   assert.equal(last.body.max_tokens, 4096);
   assert.equal(last.body.output_config.format.type, 'json_schema');
@@ -89,7 +89,7 @@ test('understand: remind intent, prompt carries the current local time', async (
   assert.equal(out.remind_at, '2026-10-29T19:00');
   assert.match(last.body.system, /Saturday, October 24, 2026(,| at) 7:00 PM/);
   assert.match(last.body.system, /YYYY-MM-DDTHH:MM/);
-  assert.deepEqual(last.body.output_config.format.schema.properties.intent.enum, ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'other']);
+  assert.deepEqual(last.body.output_config.format.schema.properties.intent.enum, ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'weather', 'other']);
 });
 
 test('understand: focus needs a known command, else other', async () => {
@@ -166,4 +166,11 @@ test('understand: sentry on/off, anything else is other', async () => {
   out = await understand({ apiKey: 'k', model: 'm', transcript: 'x', tz: NY,
     fetchImpl: claudeReply('{"intent":"sentry","memory":"","question":"","reminder":"","remind_at":"","focus":"","sentry":"maybe","reply":""}') });
   assert.equal(out.intent, 'other');
+});
+
+test('understand: weather keeps the place; the reply prompt knows the time', async () => {
+  const out = await understand({ apiKey: 'k', model: 'm', transcript: "what's the weather in boston tomorrow", now: SAT_7PM, tz: NY,
+    fetchImpl: claudeReply('{"intent":"weather","memory":"","question":"What is the weather in Boston tomorrow?","reminder":"","remind_at":"","focus":"","sentry":"","place":"Boston","reply":""}') });
+  assert.deepEqual([out.intent, out.place, out.question], ['weather', 'Boston', 'What is the weather in Boston tomorrow?']);
+  assert.match(last.body.system, /current date and time \(it is Saturday, October 24, 2026/);
 });
