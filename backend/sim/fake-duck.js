@@ -7,7 +7,7 @@
 
 import WebSocket from 'ws';
 
-const RELAY_URL = process.env.SIM_RELAY_URL ?? `ws://localhost:${process.env.RELAY_PORT ?? 8080}`;
+const RELAY_URL = process.env.SIM_RELAY_URL ?? `ws://192.168.1.67:${process.env.RELAY_PORT ?? 8080}`;
 const { DUCK_TOKEN } = process.env;
 if (!DUCK_TOKEN) throw new Error('Missing DUCK_TOKEN in backend/.env');
 

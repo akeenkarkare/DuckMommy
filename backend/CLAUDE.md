@@ -73,7 +73,7 @@ None right now.
 
 ## Commands
 - Install: `npm install` (in `/backend`)
-- Relay: `npm run dev` (auto-restarts on change) or `npm run relay` · health check: `curl localhost:8080/health`
+- Relay: `npm run dev` (auto-restarts on change) or `npm run relay` · health check: `curl 192.168.1.67:8080/health`
 - Fake duck: `npm run duck` (realistic pacing) or `npm run duck:fast` (4× speed)
 - Test: `npm test` (node's built-in runner: iCal parsing/recurrence/DST, agenda merge, nudge prompt + cleanup)
 
@@ -87,3 +87,22 @@ None right now.
 - 2026-10-23: The active user is whoever most recently logged in or opened the dashboard (no claim button).
 - 2026-10-24: Live camera view on the dashboard (Akeen asked; exception to root rule 5). Allowlisted accounts only, opt-in per viewing, relay-forwarded, never stored.
 - 2026-10-24: Lock-in coach + calendar (Akeen asked for it, Tomo-style). Claude writes the lines via `/nudge` (key on the laptop), templates as fallback. Calendar = iCal feed links parsed in-house (no new dependency); Google sign-in maybe later. New settings columns in `migrations/003_coach_and_calendar.sql`.
+
+## Google Calendar (via Auth0)
+The Calendar tab's **Connect Google Calendar** goes through Auth0's Google login. The relay then reads **every calendar in the user's Google list** (titles and times only, the next 7 days) into the same agenda as the iCal links.
+- **Reminders** (`src/reminders.js`): for every timed event the duck says *"In 5 minutes: X."* and *"X is starting now."*, and the dashboard shows the same line (`calendar` event, speech bubble). Plain sentences, no AI. The Pi coach no longer gives its own 15-minute event heads-up; it still handles deadlines (24 h / 3 h / 1 h / 15 min).
+- **Read my day** (`say_agenda`): today's remaining items, spoken by the duck.
+- Clicking an item opens it in calendar.google.com.
+- Code: `src/google.js` (Auth0 + Google Calendar API, plain fetch), relay messages `google_connect` / `google_disconnect` / `say_agenda`, callback `GET /auth/google/callback`. Only the Auth0 user id is stored (`google_calendar` table, migration 004); the Google tokens stay in Auth0.
+
+### One-time setup
+1. **Google Cloud** (console.cloud.google.com): create a project → enable the **Google Calendar API** → OAuth consent screen (External; add your Gmail under *Test users*; scope `.../auth/calendar.readonly`) → Credentials → **OAuth client ID** (Web application). Authorized redirect URI: `https://<AUTH0_DOMAIN>/login/callback`. Copy the client ID and secret.
+2. **Auth0** (manage.auth0.com):
+   - Authentication → Social → **Google / Gmail**: paste the Google client ID and secret, tick **Offline Access** (and Calendar if it's listed). Save.
+   - Applications → **Create application** → Regular Web Application. Settings: **Allowed Callback URLs** = `http://192.168.1.67:8080/auth/google/callback`. Connections tab: enable **google-oauth2**.
+   - Applications → APIs → **Auth0 Management API** → Machine to Machine Applications → authorize the same app with **read:users** and **read:user_idp_tokens**.
+3. **backend/.env**: `AUTH0_DOMAIN` (e.g. `duckdaddy.us.auth0.com`), `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and if not on 192.168.1.67, `RELAY_PUBLIC_URL` / `DASHBOARD_URL`. Restart the relay; `/health` shows `google_calendar: true`.
+4. **Supabase**: run `supabase/migrations/004_google_calendar.sql` (and `003_coach_and_calendar.sql` if it hasn't been run yet).
+
+While the Google consent screen is in *Testing* mode, Google expires refresh tokens after 7 days: just press Connect again (or publish the app).
+

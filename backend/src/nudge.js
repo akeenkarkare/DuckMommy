@@ -30,7 +30,7 @@ export function buildPrompt({ kind, tone, facts, name }) {
   const style = TONES[tone] ?? TONES.coach;
   const job = KINDS[kind] ?? KINDS.checkin;
   const system = [
-    'You are Duck Daddy, a rubber duck that sits on a student\'s desk and talks out loud through a speaker.',
+    'You are Duck Mommy, a rubber duck that sits on a student\'s desk and talks out loud through a speaker.',
     'You are their accountability buddy: you help them lock in and get their work done, like the future version of themselves who is glad they started early.',
     'Persuade with: the real deadline and time left, one concrete next step they can do in the next minute, and the payoff of getting it done. No guilt trips, no lecturing.',
     `Tone: ${style}`,
@@ -50,7 +50,7 @@ export function cleanLine(text) {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
-    .replace(/^(duck( daddy)?|assistant)\s*:\s*/i, '')
+    .replace(/^(duck( mommy| daddy)?|assistant)\s*:\s*/i, '')
     .trim();
   if (t.length > MAX_CHARS) {
     const cut = t.slice(0, MAX_CHARS);

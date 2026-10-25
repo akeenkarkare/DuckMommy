@@ -42,7 +42,7 @@ None right now.
 
 ## Commands
 - Install: `npm install` (in `/dashboard`)
-- Run: `npm run dev` → http://localhost:3000 (the relay must be running)
+- Run: `npm run dev` → http://192.168.1.67:3000 (the relay must be running)
 - Build: `npm run build`
 - Code: plain JS, App Router, no CSS framework. `lib/useRelay.js` (WS + reconnect), `components/` (chart, settings, log, auth form)
 

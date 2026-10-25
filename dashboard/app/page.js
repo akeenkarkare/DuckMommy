@@ -46,7 +46,9 @@ export default function Dashboard() {
     bridge.current.react({ ...e, message });
   }, [bridge, s.settings]);
 
-  const { connected, status, events, lastAck, send, agenda, video, watch, bufferMs } = useRelay(!!user, onEvent);
+  const { connected, status, events, lastAck, send, agenda, googleError, video, watch, bufferMs } = useRelay(!!user, onEvent);
+  const [calendarNotice, setCalendarNotice] = useState(null);
+  const googleNotice = googleError ? { ok: false, text: googleError } : calendarNotice;
   const canCommand = connected && status.duck_connected && status.with_you;
 
   useEffect(() => {
@@ -94,6 +96,19 @@ export default function Dashboard() {
     if (focus) setTouched(true);
   }, [focus]);
 
+  // Back from Google sign-in (relay /auth/google/callback): open the Calendar tab and say how it went.
+  useEffect(() => {
+    if (!user) return;
+    const q = new URLSearchParams(window.location.search);
+    const result = q.get('calendar');
+    if (!result) return;
+    setCalendarNotice(result === 'connected'
+      ? { ok: true, text: 'Google Calendar connected. The duck will remind you 5 minutes before each event.' }
+      : { ok: false, text: `Couldn’t connect Google Calendar: ${q.get('reason') || 'unknown error'}` });
+    setFocus('calendar');
+    window.history.replaceState(null, '', window.location.pathname);
+  }, [user, setFocus]);
+
   if (!user) return null;
 
   const panel = focus && PANELS[focus];
@@ -106,7 +121,7 @@ export default function Dashboard() {
         <div className="brand">
           <span style={{ fontSize: 26 }} aria-hidden>🦆</span>
           <div>
-            <h1>Duck Daddy</h1>
+            <h1>Duck Mommy</h1>
             <div className="who">Hi, {name}</div>
           </div>
         </div>
@@ -141,7 +156,7 @@ export default function Dashboard() {
             </div>
             <div className="panel-body" key={focus}>
               <Body events={recent} now={now} windowMs={bufferMs} s={s} send={send} canCommand={canCommand}
-                duck={bridge.current} lastAck={lastAck} agenda={agenda} connected={connected} allEvents={events} watch={watch} video={video} />
+                duck={bridge.current} lastAck={lastAck} agenda={agenda} googleNotice={googleNotice} connected={connected} allEvents={events} watch={watch} video={video} />
               {s.state && <p className="hint">{s.state}</p>}
             </div>
           </>

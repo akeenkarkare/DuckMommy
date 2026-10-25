@@ -7,7 +7,7 @@ const display = Space_Grotesk({ subsets: ['latin'], weight: ['500', '700'], vari
 const body = Inter({ subsets: ['latin'], variable: '--font-body' });
 
 export const metadata = {
-  title: 'Duck Daddy',
+  title: 'Duck Mommy',
   description: 'Your desk duck: posture, pats, signs and sentry, live.',
 };
 

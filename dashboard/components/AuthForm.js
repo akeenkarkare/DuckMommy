@@ -46,7 +46,7 @@ export default function AuthForm({ mode }) {
 
   return (
     <main className={`auth ${leaving ? 'leaving' : ''}`}>
-      <div className="auth-brand"><span aria-hidden>🦆</span> Duck Daddy</div>
+      <div className="auth-brand"><span aria-hidden>🦆</span> Duck Mommy</div>
       <div className="auth-scene"><ScenePicker /></div>
 
       <form className="auth-card glass" onSubmit={onSubmit}>
