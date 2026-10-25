@@ -1,9 +1,13 @@
 'use client';
 
 // Small settings controls bound to useSettings' { settings, change }.
+// While the settings row is still loading they show a skeleton bar instead of nothing.
+
+const Skeleton = ({ h = 44 }) => <div className="skel" style={{ height: h }} aria-hidden />;
 
 export function RangeField({ s, k, label, min = 0, max = 100, hint, format = (v) => v }) {
-  if (!s.settings || !(k in s.settings)) return null;
+  if (!s.settings) return <Skeleton h={52} />;
+  if (!(k in s.settings)) return null;
   const v = s.settings[k];
   return (
     <div className="field">
@@ -15,7 +19,8 @@ export function RangeField({ s, k, label, min = 0, max = 100, hint, format = (v)
 }
 
 export function TextField({ s, k, label, optional }) {
-  if (!s.settings || !(k in s.settings)) return null;
+  if (!s.settings) return <Skeleton h={68} />;
+  if (!(k in s.settings)) return null;
   return (
     <div className="field">
       <label htmlFor={k}>{label}{optional && <span className="hint">empty = stay quiet</span>}</label>
@@ -26,7 +31,7 @@ export function TextField({ s, k, label, optional }) {
 }
 
 export function Toggle({ s, k, label, hint, migration = '002_sign_and_sound.sql' }) {
-  if (!s.settings) return null;
+  if (!s.settings) return <Skeleton />;
   if (!(k in s.settings)) {
     return <p className="hint">Run backend/supabase/migrations/{migration} to enable “{label}”.</p>;
   }
@@ -39,7 +44,8 @@ export function Toggle({ s, k, label, hint, migration = '002_sign_and_sound.sql'
 }
 
 export function SelectField({ s, k, label, options, hint }) {
-  if (!s.settings || !(k in s.settings)) return null;
+  if (!s.settings) return <Skeleton h={68} />;
+  if (!(k in s.settings)) return null;
   return (
     <div className="field">
       <label htmlFor={k}>{label}</label>

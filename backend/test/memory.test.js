@@ -55,9 +55,21 @@ test('recall prompt: an empty list says so', () => {
 
 test('answerRecall returns a speakable line', async () => {
   const fetchImpl = claudeReply('**Five days ago**, on Monday, you said your keys are in the blue drawer. 🦆');
-  const text = await answerRecall({ apiKey: 'k', model: 'm', question: 'q', memories: [], now: 0, tz: NY, fetchImpl });
+  const { text, sources } = await answerRecall({ apiKey: 'k', model: 'm', question: 'q', memories: [], now: 0, tz: NY, fetchImpl });
   assert.equal(text, 'Five days ago, on Monday, you said your keys are in the blue drawer.');
+  assert.deepEqual(sources, []);
   assert.equal(last.body.output_config.format, undefined);
+});
+
+test('answerRecall: the NOTES line becomes note ids and is not spoken', async () => {
+  const at = '2026-10-19T14:30:00Z';
+  const memories = [{ id: 11, text: 'a', created_at: at }, { id: 22, text: 'b', created_at: at }, { id: 33, text: 'c', created_at: at }];
+  const fetchImpl = claudeReply('Your keys are in the blue drawer, bestie.\nNOTES: 3, 1, 3, 9');
+  const { text, sources } = await answerRecall({ apiKey: 'k', model: 'm', question: 'q', memories, now: 0, tz: NY, fetchImpl });
+  assert.equal(text, 'Your keys are in the blue drawer, bestie.');
+  assert.deepEqual(sources, [33, 11]);   // de-duplicated, unknown numbers dropped
+  const none = await answerRecall({ apiKey: 'k', model: 'm', question: 'q', memories, now: 0, tz: NY, fetchImpl: claudeReply("I don't have a note about that.\nNOTES: none") });
+  assert.deepEqual(none, { text: "I don't have a note about that.", sources: [] });
 });
 
 test('transcribe posts multipart to ElevenLabs and returns the text', async () => {

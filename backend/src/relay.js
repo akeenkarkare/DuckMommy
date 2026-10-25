@@ -12,6 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 import { buildAgenda, feedUrls } from './calendar.js';
 import { authorizeUrl, exchangeCode, fetchGoogleEvents, googleConfigured } from './google.js';
 import { localTimeZone } from './ics.js';
+import { imessageConfigured, sendIMessage, sentryText } from './imessage.js';
 import { daySummary, dueReminders } from './reminders.js';
 import { writeNudge } from './nudge.js';
 import { answerAgenda, answerLookup, answerRecall, friendlyWhen, parseRemindAt, transcribe, understand } from './memory.js';
@@ -76,6 +77,13 @@ const GOOGLE_ENV = {
 };
 const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'http://localhost:3000').replace(/\/$/, '');
 const CONNECT_STATE_MS = 10 * 60 * 1000;
+// Sentry -> iMessage (Photon), to the active user's profiles.phone (else SENTRY_IMESSAGE_TO).
+const IMESSAGE_ENV = {
+  SPECTRUM_PROJECT_ID: process.env.SPECTRUM_PROJECT_ID, SPECTRUM_PROJECT_SECRET: process.env.SPECTRUM_PROJECT_SECRET,
+  SENTRY_IMESSAGE_TO: process.env.SENTRY_IMESSAGE_TO?.trim(),
+};
+const IMESSAGE_COOLDOWN_MS = 60 * 1000;   // one text per sighting, not one per frame (Photon caps texts/day)
+let lastIMessageAt = 0;
 const REMINDER_TICK_MS = 10 * 1000;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
@@ -296,6 +304,24 @@ function handleDuck(msg) {
   recentEvents(activeUserId).push(event);
   sendToUser(activeUserId, { type: 'event', event });
   log('event', event.type, JSON.stringify(event.value));
+  if (event.type === 'sentry' && event.value?.person_confirmed) textSentryAlert();
+}
+
+// Same moment and same words as the dashboard's "Possible intruder" pop-up, even with no tab open.
+async function textSentryAlert() {
+  if (!activeUserId || !imessageConfigured(IMESSAGE_ENV) || Date.now() - lastIMessageAt < IMESSAGE_COOLDOWN_MS) return;
+  lastIMessageAt = Date.now();
+  // read it now, so a number changed a minute ago on the dashboard is the one that gets texted
+  const { data, error } = await supabase.from('profiles').select('phone').eq('user_id', activeUserId).maybeSingle();
+  if (error) log('sentry iMessage: phone lookup failed (run migration 006?):', error.message);
+  const to = data?.phone || IMESSAGE_ENV.SENTRY_IMESSAGE_TO;
+  if (!to) return log('sentry iMessage skipped: no phone on the profile and no SENTRY_IMESSAGE_TO');
+  try {
+    await sendIMessage(IMESSAGE_ENV, to, sentryText());
+    log('sentry iMessage sent');
+  } catch (e) {
+    log('sentry iMessage failed', e.message);
+  }
 }
 
 function handleDashboard(ws, msg) {
@@ -562,18 +588,19 @@ async function handleVoice(req, res) {
     }
 
     if (meant.intent === 'recall') {
-      const { data, error } = await supabase.from('memories').select('text, created_at')
+      const { data, error } = await supabase.from('memories').select('id, text, created_at')
         .eq('user_id', userId).order('created_at', { ascending: false }).limit(MEMORY_RECALL_LIMIT);
       if (error) {
         log('memory load failed', error.message);
         return voiceReply(res, 200, { intent: 'recall', heard, say: "Not gonna lie, I can't reach my notes right now." });
       }
       const question = meant.question || heard;
-      const answer = await answerRecall({
+      const { text: answer, sources } = await answerRecall({
         apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, question,
         memories: (data ?? []).reverse(), tz: MEMORY_TZ, name,
       });
-      if (userId === activeUserId) emitToActive('memory', { action: 'recall', question, answer });
+      // sources: ids of the notes the answer came from; the Nest flashes them
+      if (userId === activeUserId) emitToActive('memory', { action: 'recall', question, answer, sources });
       log('memory recall answered');
       return voiceReply(res, 200, { intent: 'recall', heard, say: answer || "I don't have a note about that, bestie. Did you actually tell me?" });
     }
@@ -697,7 +724,7 @@ const server = createServer((req, res) => {
   if (req.method === 'GET' && req.url.startsWith('/auth/google/callback')) return void handleGoogleCallback(req, res);
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID), coach_ai: !!ANTHROPIC_API_KEY, memory: !!(ANTHROPIC_API_KEY && ELEVENLABS_API_KEY), google_calendar: googleConfigured(GOOGLE_ENV), live_view: VIDEO_VIEWERS.length > 0, watching: watchers().length }));
+    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID), coach_ai: !!ANTHROPIC_API_KEY, memory: !!(ANTHROPIC_API_KEY && ELEVENLABS_API_KEY), google_calendar: googleConfigured(GOOGLE_ENV), sentry_imessage: imessageConfigured(IMESSAGE_ENV), live_view: VIDEO_VIEWERS.length > 0, watching: watchers().length }));
   }
   res.writeHead(404).end();
 });

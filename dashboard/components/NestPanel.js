@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ForgetIcon, NestIcon, RefreshIcon, SOURCE_ICON, TypedIcon } from './NestIcons';
 
@@ -21,6 +21,20 @@ function stamp(ts, now) {
   if (days < 7) return `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
+
+const clockTime = (ts) => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+/** Day header for the notes list: Today, Yesterday, a weekday this week, else the date. */
+function dayLabel(ts, now) {
+  const d = new Date(ts);
+  const days = Math.floor((new Date(now).setHours(0, 0, 0, 0) - new Date(ts).setHours(0, 0, 0, 0)) / 86400000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return d.toLocaleDateString([], { weekday: 'long' });
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric' });
+}
+
+const RECALL_FLASH_MS = 2 * 60 * 1000;   // notes behind the last answer stay highlighted this long
 
 // Nest: everything you told the duck to remember. Read straight from Supabase (RLS: your rows only);
 // a live `memory` event from the relay means a new note was saved, so it reloads.
@@ -109,6 +123,14 @@ export default function NestPanel({ allEvents, now }) {
   const lastSaved = allEvents.findLast((e) => e.type === 'memory' && e.value?.action === 'saved')?.ts;
   useEffect(() => { if (lastSaved) load(); }, [lastSaved, load]);
   const lastRecall = allEvents.findLast((e) => e.type === 'memory' && e.value?.action === 'recall');
+  // The notes the duck's last answer came from (relay sends their ids): flash them and scroll to the first.
+  const sources = new Set(lastRecall && now - lastRecall.ts < RECALL_FLASH_MS ? lastRecall.value.sources ?? [] : []);
+  const listRef = useRef(null);
+  useEffect(() => {
+    if (!lastRecall?.value?.sources?.length) return;
+    const id = setTimeout(() => listRef.current?.querySelector('li.flash')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 300);
+    return () => clearTimeout(id);
+  }, [lastRecall?.ts, notes]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   async function add(e) {
     e.preventDefault();
@@ -144,6 +166,7 @@ export default function NestPanel({ allEvents, now }) {
           <h2>Last thing you asked <span className="sub">{stamp(lastRecall.ts, now)}</span></h2>
           <p className="hint" style={{ margin: '0 0 6px' }}>“{lastRecall.value.question}”</p>
           <p style={{ margin: 0 }}>{lastRecall.value.answer}</p>
+          {sources.size > 0 && <p className="hint" style={{ margin: '6px 0 0' }}>From {sources.size === 1 ? 'the highlighted note' : `the ${sources.size} highlighted notes`} below.</p>}
         </div>
       )}
 
@@ -171,15 +194,20 @@ export default function NestPanel({ allEvents, now }) {
         {notes === null ? <p className="empty">Loading…</p> : shown.length === 0 ? (
           <p className="empty nest-empty">{!q && <NestIcon size={28} />}{q ? 'No notes match that.' : 'Nothing in the nest yet. Try “hey duck, remember my keys are in the blue drawer.”'}</p>
         ) : (
-          <ul className="list nest-list">
-            {shown.map((n) => (
-              <li key={n.id}>
+          <ul className="list nest-list" ref={listRef}>
+            {shown.map((n, i) => (
+              <Fragment key={n.id}>
+              {(i === 0 || dayLabel(shown[i - 1].created_at, now) !== dayLabel(n.created_at, now)) && (
+                <li className="nest-day" aria-hidden>{dayLabel(n.created_at, now)}</li>
+              )}
+              <li className={sources.has(n.id) ? 'flash' : undefined}>
                 <span className="nest-note"><SourceIcon source={n.source} /><span>{n.text}</span></span>
                 <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-                  <span className="time">{stamp(n.created_at, now)}</span>
+                  <span className="time">{clockTime(n.created_at)}</span>
                   <button className="btn icon nest-forget" aria-label={`Forget “${n.text}”`} title="Forget this" onClick={() => forget(n.id)}><ForgetIcon /></button>
                 </span>
               </li>
+              </Fragment>
             ))}
           </ul>
         )}

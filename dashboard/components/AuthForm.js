@@ -6,12 +6,15 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useDuck } from '@/components/duck/DuckContext';
 import ScenePicker from '@/components/ScenePicker';
+import BrandMark from '@/components/BrandMark';
+import { normalizePhone, PHONE_HINT } from '@/lib/phone';
 
 export default function AuthForm({ mode }) {
   const router = useRouter();
   const { bridge } = useDuck();
   const isRegister = mode === 'register';
   const [displayName, setDisplayName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -22,12 +25,14 @@ export default function AuthForm({ mode }) {
 
   async function onSubmit(e) {
     e.preventDefault();
+    const e164 = isRegister ? normalizePhone(phone) : '';
+    if (e164 === null) return setError('That phone number doesn’t look right. Include the country code, e.g. +1 555 123 4567.');
     setBusy(true);
     setError('');
     setNotice('');
 
     const { data, error } = isRegister
-      ? await supabase.auth.signUp({ email, password, options: { data: { display_name: displayName.trim() || null } } })
+      ? await supabase.auth.signUp({ email, password, options: { data: { display_name: displayName.trim() || null, phone: e164 || null } } })
       : await supabase.auth.signInWithPassword({ email, password });
 
     setBusy(false);
@@ -46,7 +51,7 @@ export default function AuthForm({ mode }) {
 
   return (
     <main className={`auth ${leaving ? 'leaving' : ''}`}>
-      <div className="auth-brand"><span aria-hidden>🦆</span> Duck Mommy</div>
+      <div className="auth-brand"><BrandMark size={26} /> Duck Mommy</div>
       <div className="auth-scene"><ScenePicker /></div>
 
       <form className="auth-card glass" onSubmit={onSubmit}>
@@ -59,6 +64,14 @@ export default function AuthForm({ mode }) {
           <div className="field">
             <label htmlFor="name">Display name</label>
             <input id="name" type="text" maxLength={50} autoComplete="nickname" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+          </div>
+        )}
+        {isRegister && (
+          <div className="field">
+            <label htmlFor="phone">Phone <span className="hint">optional</span></label>
+            <input id="phone" type="tel" maxLength={24} autoComplete="tel" placeholder="+1 555 123 4567"
+              value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <p className="hint">{PHONE_HINT}</p>
           </div>
         )}
         <div className="field">

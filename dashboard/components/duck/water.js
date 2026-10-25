@@ -59,10 +59,12 @@ float waterH(vec2 p) {
   vec3 nWorld = normalize(vec3(-hx * 2.2, 1.0, -hz * 2.2));
   normal = normalize((viewMatrix * vec4(nWorld, 0.0)).xyz);
 }`)
-      // see-through only right around the duck (its submerged half); solid everywhere else,
-      // so none of the panorama's ground shows below the horizon
+      // see-through only right around the duck (its submerged half); solid in between, so none
+      // of the panorama's ground shows; and feathered into the panorama toward the far edge, so
+      // there's no hard line where the plane ends short of the horizon
       .replace('#include <dithering_fragment>', `#include <dithering_fragment>
-gl_FragColor.a = mix(0.82, 1.0, smoothstep(1.4, 2.6, length(vWPos.xz)));`);
+float dist = length(vWPos.xz);
+gl_FragColor.a = mix(0.82, 1.0, smoothstep(1.4, 2.6, dist)) * (1.0 - smoothstep(60.0, 900.0, dist));`);
   };
 
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), material);   // to the horizon

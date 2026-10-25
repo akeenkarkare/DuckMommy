@@ -1,4 +1,5 @@
 import { Inter, Space_Grotesk } from 'next/font/google';
+import { preload } from 'react-dom';
 import { DuckProvider } from '@/components/duck/DuckContext';
 import DuckStage from '@/components/duck/DuckStage';
 import './globals.css';
@@ -14,6 +15,8 @@ export const metadata = {
 // The duck stage lives here, above the routes, so it never unmounts:
 // login -> dashboard is one continuous animation.
 export default function RootLayout({ children }) {
+  // The default scene's 6 MB panorama starts downloading with the page, not after the JS boots.
+  preload('/scenes/pool_2k.hdr', { as: 'fetch', crossOrigin: 'anonymous' });
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body>

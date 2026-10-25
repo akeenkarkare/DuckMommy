@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import SlouchChart from './SlouchChart';
 import SignCard from './SignCard';
 import EventLog from './EventLog';
@@ -8,6 +8,8 @@ import LiveView from './LiveView';
 import NestPanel from './NestPanel';
 import { desktopAlertsState } from './IntruderAlert';
 import { RangeField, SelectField, TextField, Toggle } from './Controls';
+import { normalizePhone, PHONE_HINT } from '@/lib/phone';
+import { supabase } from '@/lib/supabase';
 
 const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 const ago = (ts, now) => {
@@ -21,6 +23,49 @@ const SOUND = {
   notification: ['🔔', 'Notification', 'three blinks'],
   calling: ['📣', 'Someone calling', 'long glows'],
 };
+
+// profiles.phone: the number sentry iMessages go to. Read and saved straight to the user's own
+// profile row (RLS), only once it's a valid number, so a half-typed one never hits the DB check.
+function SentryPhone() {
+  const [text, setText] = useState('');
+  const [state, setState] = useState('loading');   // loading | ready | missing (migration 006 not run) | error text
+  const userId = useRef(null);
+  const timer = useRef(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      userId.current = session?.user.id;
+      const { data, error } = await supabase.from('profiles').select('phone').eq('user_id', userId.current).maybeSingle();
+      if (error) return setState(error.code === '42703' ? 'missing' : `Couldn’t load your number: ${error.message}`);
+      setText(data?.phone ?? '');
+      setState('ready');
+    });
+    return () => clearTimeout(timer.current);
+  }, []);
+
+  if (state === 'loading') return <div className="skel" style={{ height: 68 }} aria-hidden />;
+  if (state === 'missing') return <p className="hint">Run backend/supabase/migrations/006_profile_phone.sql to get intruder iMessages.</p>;
+  const e164 = normalizePhone(text);
+  return (
+    <div className="field">
+      <label htmlFor="phone">Text me when someone's spotted <span className="hint">iMessage</span></label>
+      <input id="phone" type="tel" maxLength={24} autoComplete="tel" placeholder="+1 555 123 4567" value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          const v = normalizePhone(e.target.value);
+          clearTimeout(timer.current);
+          if (v === null) return;
+          timer.current = setTimeout(async () => {
+            const { error } = await supabase.from('profiles').update({ phone: v || null }).eq('user_id', userId.current);
+            setState(error ? `Not saved: ${error.message}` : 'ready');
+          }, 800);
+        }} />
+      <p className={e164 === null || !['ready'].includes(state) ? 'error' : 'hint'}>
+        {e164 === null ? 'Include the country code, e.g. +1 555 123 4567.' : state !== 'ready' ? state : PHONE_HINT}
+      </p>
+    </div>
+  );
+}
 
 function DesktopAlerts() {
   const [state, setState] = useState('unsupported');
@@ -41,17 +86,17 @@ function CameraPanel({ events, now, windowMs, s, watch, video, canCommand, liveR
   const sentries = events.filter((e) => e.type === 'sentry').slice(-4).reverse();
   return (
     <>
+      <LiveView watch={watch} video={video} canCommand={canCommand} autoStart={liveRequest} />
+      <SignCard events={events} />
       <div className="tiles">
         <div className="tile"><div className="label">Posture</div><div className="value">{!posture ? '—' : posture.value?.state === 'slouch' ? 'Slouch' : 'Upright'}</div></div>
         <div className="tile"><div className="label">Slouches · 5m</div><div className="value">{slouches}</div></div>
         <div className="tile"><div className="label">At desk</div><div className="value">{!presence ? '—' : presence.value?.present ? 'Yes' : 'Away'}</div></div>
       </div>
-      <LiveView watch={watch} video={video} canCommand={canCommand} autoStart={liveRequest} />
       <div className="card">
         <h2>Slouch prompts <span className="sub">per 30 s · last 5 min</span></h2>
         <SlouchChart events={events} now={now} windowMs={windowMs} />
       </div>
-      <SignCard events={events} />
       <div className="section">
         <h3>Posture</h3>
         <RangeField s={s} k="posture_severity" label="Severity" hint="0 = only big slouches count · 100 = any lean counts" />
@@ -61,6 +106,7 @@ function CameraPanel({ events, now, windowMs, s, watch, video, canCommand, liveR
         <h3>Sentry · night vision</h3>
         <Toggle s={s} k="sentry_enabled" label="Guard my desk while I'm away" hint="Or say “hey duck, sentry mode on”. Anyone who sits down then counts as a possible intruder until you press It's me." />
         <DesktopAlerts />
+        <SentryPhone />
         <Toggle s={s} k="sign_enabled" label="Sign to Duck" hint="Reads ASL signs aloud" />
         {sentries.length > 0 && (
           <ul className="list">

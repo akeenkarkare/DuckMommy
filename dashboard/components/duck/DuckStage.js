@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { buildDuck, buildGlow } from './buildDuck';
+import { buildAccessories } from './accessories';
 import { buildWater } from './water';
 import { sceneById } from './scenes';
 import { HOTSPOTS } from './hotspots';
@@ -23,6 +24,8 @@ const PRESETS = {
   dashboardNarrow: { cam: [0, 0.9, 15], target: [0, 0.45, 0], yaw: 0.42, pitch: 0.14 },
 };
 const GROUND_Y = -0.92;
+// Non-hotspot focus ids: the whole duck slides left, clear of the drawer, with its labels hidden.
+const ASIDE = new Set(['activity', 'calendar', 'nest', 'aside']);
 const LABEL_DY = { camera: -0.06, petting: -0.1, voice: 0.02, microphone: 0.1, focus: -0.12 };
 
 const nearest = (angle, ref) => angle + TAU * Math.round((ref - angle) / TAU);
@@ -30,13 +33,13 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const easeOutBack = (x) => 1 + 2.2 * (x - 1) ** 3 + 1.2 * (x - 1) ** 2;
 
 export default function DuckStage() {
-  const { mode, focus, setFocus, badges, bridge, scene: sceneId } = useDuck();
+  const { mode, focus, setFocus, badges, bridge, scene: sceneId, tone } = useDuck();
   const mountRef = useRef(null);
   const labelRefs = useRef({});
   const lineRefs = useRef({});
   const dotRefs = useRef({});
   const bubbleRef = useRef(null);
-  const live = useRef({ mode, focus, setFocus, sceneId });   // what the render loop reads
+  const live = useRef({ mode, focus, setFocus, sceneId, tone });   // what the render loop reads
   const ctrl = useRef(null);                        // render-loop state, created on mount
 
   live.current.setFocus = setFocus;
@@ -63,6 +66,12 @@ export default function DuckStage() {
     live.current.sceneId = sceneId;
     ctrl.current?.applyScene(sceneId);
   }, [sceneId]);
+
+  // personality outfit: swap with a pop and a little hop
+  useEffect(() => {
+    live.current.tone = tone;
+    ctrl.current?.setTone(tone);
+  }, [tone]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -106,6 +115,9 @@ export default function DuckStage() {
 
     const duck = buildDuck();
     scene.add(duck.group);
+    const acc = buildAccessories(duck);
+    acc.setReduced(reduced);
+    acc.set(live.current.tone, { instant: true });
     const water = buildWater();
     water.mesh.visible = false;
     scene.add(water.mesh);
@@ -132,7 +144,7 @@ export default function DuckStage() {
       bubbleUntil: 0, sides: {},
       intro: 0,
       elastic: { yaw: 0, pitch: 0, vy: 0, vp: 0 },   // tab open: drag offset that springs back
-      water: false, nextVoiceRip: 0, nextIdleRip: 1, splash: 0, airborne: false,
+      water: false, nextVoiceRip: 0, nextIdleRip: 1, splash: 0, airborne: false, nextScrollSplash: 0,
     };
     ctrl.current = c;
 
@@ -192,6 +204,9 @@ export default function DuckStage() {
     const talk = (text) => { c.talk = Math.min(4, 0.6 + (text?.length ?? 8) * 0.055); };
     const ripple = () => { const t = performance.now() / 1000; c.ripples = [t, t + 0.25, t + 0.5]; };
 
+    c.setTone = (t) => { if (acc.set(t)) hop(1.6); };
+    bridge.current.setTone = c.setTone;
+
     bridge.current.react = (e) => {
       const v = e.value ?? {};
       switch (e.type) {
@@ -207,6 +222,8 @@ export default function DuckStage() {
         case 'focus': hop(2); bubble('Focus mode 🎯', 2200); break;
         case 'say': talk(v.text); bubble(v.text, 3500); break;
         case 'calendar': talk(v.text); bubble(`📅 ${v.text}`, 5000); break;
+        case 'whistle': acc.blow(); ripple(); break;   // coach: focus session started
+        case 'wink': c.blink = 0.45; c.nextBlink = performance.now() / 1000 + 3; break;   // eyes[0] is the only eye that blinks
         default: break;
       }
     };
@@ -266,6 +283,12 @@ export default function DuckStage() {
         if (h) { squish(); bubble('Quack!', 1200); }
         return;
       }
+      const pick = bridge.current.onPick;   // a page (the landing) decides what a click on a part does
+      if (pick) {
+        if (h === 'petting' || h === 'body') { squish(); bubble('Quack!', 1200); }
+        if (h && h !== 'body') pick(h);
+        return;
+      }
       if (!h) { if (live.current.focus) live.current.setFocus(null); return; }
       if (h === 'petting' || h === 'body') {
         squish(); bubble('Quack!', 1200);
@@ -275,7 +298,7 @@ export default function DuckStage() {
       }
       live.current.setFocus(h);
     };
-    const onKey = (e) => { if (e.key === 'Escape') live.current.setFocus(null); };
+    const onKey = (e) => { if (e.key === 'Escape' && !bridge.current.onPick) live.current.setFocus(null); };
     const onResize = () => {
       renderer.setSize(window.innerWidth, window.innerHeight);
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -358,8 +381,16 @@ export default function DuckStage() {
         const idle = reduced ? 0 : clamp((t - c.lastInput - 2.5) / 2, 0, 1);
         gYaw = c.userYaw + Math.sin(t * 0.35) * 0.28 * idle;
         gPitch = c.userPitch;
-        if (f === 'activity' || f === 'calendar') { gOffX = wide ? PANEL_W / 2 / W : 0; gOffY = wide ? 0 : 0.3; }
+        if (ASIDE.has(f)) { gOffX = wide ? PANEL_W / 2 / W : 0; gOffY = wide ? 0 : 0.3; }
         else gLabels = 1;
+      }
+
+      // landing page: keep turning while you scroll inside a section (p = -0.5..0.5)
+      const sc = reduced ? null : bridge.current.scroll;
+      if (sc) {
+        sc.v *= Math.exp(-6 * dt);
+        gYaw += sc.p * 0.7;
+        gPitch += sc.p * 0.12;
       }
 
       // ease toward goals
@@ -405,6 +436,13 @@ export default function DuckStage() {
       // afloat: rock gently with the water
       duck.bob.rotation.z = c.water && !reduced ? Math.sin(t * 1.1) * 0.035 : 0;
       duck.bob.rotation.x = c.water && !reduced ? Math.sin(t * 0.8 + 1) * 0.025 : 0;
+      if (sc) {   // lean into the scroll; scroll fast and it splashes
+        duck.bob.rotation.x += clamp(sc.v * 0.004, -0.18, 0.18);
+        duck.bob.rotation.z += clamp(-sc.v * 0.0015, -0.08, 0.08);
+        if (Math.abs(sc.v) > 120 && t > c.nextScrollSplash) { c.splash = Math.max(c.splash, 0.05); c.nextScrollSplash = t + 0.45; }
+      }
+
+      acc.update(dt, t);
 
       // water ripples: splash on pats and landings, rings from the beak while talking, idle bobbing
       water.update(t);
@@ -462,6 +500,7 @@ export default function DuckStage() {
       const bottom = proj(tmp.set(0, -0.9, 0).applyMatrix4(duck.group.matrixWorld))[1];
       const duckH = Math.abs(bottom - top);
       const reach = duckH * 0.42;
+      bridge.current.duckRect = { x: cx - duckH * 0.45, y: Math.min(top, bottom), w: duckH * 0.9, h: duckH };
 
       for (const h of HOTSPOTS) {
         const el = labelRefs.current[h.id], line = lineRefs.current[h.id], dot = dotRefs.current[h.id];
@@ -524,8 +563,10 @@ export default function DuckStage() {
   const interactive = mode === 'dashboard' && !focus;
   return (
     <>
+      {/* the scene's small preview, blurred, until its HDR panorama has loaded (the canvas is transparent till then) */}
+      <div className="duck-backdrop" style={{ backgroundImage: `url(/scenes/${sceneById(sceneId).file}.jpg)` }} aria-hidden />
       <div ref={mountRef} className="duck-stage" />
-      <div className="duck-overlay" aria-hidden={!interactive}>
+      <div className={`duck-overlay ${focus ? 'drawer-open' : ''}`} aria-hidden={!interactive}>
         <svg className="duck-leaders">
           {HOTSPOTS.map((h) => (
             <g key={h.id}>
@@ -539,8 +580,9 @@ export default function DuckStage() {
             key={h.id}
             ref={(el) => (labelRefs.current[h.id] = el)}
             className="duck-label"
+            data-id={h.id}
             tabIndex={interactive ? 0 : -1}
-            onClick={() => setFocus(h.id)}
+            onClick={() => (bridge.current.onPick ? bridge.current.onPick(h.id) : setFocus(h.id))}
           >
             <span className="duck-label-title">{h.title}</span>
             <span className="duck-label-sub">{badges[h.id] ?? h.sub}</span>

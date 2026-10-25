@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 const BIN_MS = 30 * 1000;
-const W = 600, H = 200;
+const W = 380, H = 150;   // ~ the drawer's width, so the 11px axis text isn't scaled down to 6px
 const M = { top: 10, right: 4, bottom: 24, left: 28 };
 const PLOT_W = W - M.left - M.right;
 const PLOT_H = H - M.top - M.bottom;

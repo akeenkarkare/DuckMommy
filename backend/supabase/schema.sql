@@ -26,6 +26,8 @@ $$;
 create table public.profiles (
   user_id      uuid primary key references auth.users (id) on delete cascade,
   display_name text check (char_length(display_name) <= 50),
+  -- Sentry iMessage alerts (Photon), E.164. Read by the relay only, never pushed to the Pi. (migration 006)
+  phone        text check (phone is null or phone ~ '^\+[1-9][0-9]{6,14}$'),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
@@ -82,9 +84,13 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  phone text := new.raw_user_meta_data ->> 'phone';
 begin
-  insert into public.profiles (user_id, display_name)
-  values (new.id, new.raw_user_meta_data ->> 'display_name');
+  -- A malformed phone is dropped rather than failing the sign-up.
+  insert into public.profiles (user_id, display_name, phone)
+  values (new.id, new.raw_user_meta_data ->> 'display_name',
+          case when phone ~ '^\+[1-9][0-9]{6,14}$' then phone end);
 
   insert into public.settings (user_id)
   values (new.id);
