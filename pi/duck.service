@@ -1,0 +1,19 @@
+# The duck as a systemd *user* service: starts at boot (with lingering on), restarts if it crashes.
+# Installed by pi/install-service.sh, which fills in @PI_DIR@. Logs: ~/duck.log (same as running by hand).
+[Unit]
+Description=DuckMommy duck (camera, mic, voice, relay uplink)
+# sound servers, if this Pi has them (harmless when it doesn't)
+After=pipewire.service pipewire-pulse.service wireplumber.service
+StartLimitIntervalSec=0
+
+[Service]
+WorkingDirectory=@PI_DIR@
+ExecStart=@PI_DIR@/.venv/bin/python duck.py
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+StandardOutput=append:%h/duck.log
+StandardError=append:%h/duck.log
+
+[Install]
+WantedBy=default.target

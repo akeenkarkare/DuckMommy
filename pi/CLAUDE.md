@@ -272,6 +272,7 @@ Make sure `.gitignore` covers `asl/models/`, `models/`, `training/**/data/`.
 6. New dependency → ask first (Pi installs are slow and can break the camera stack).
 
 ## Commands
+- **On the duck:** `./install-service.sh` once → `duck.py` starts at boot and restarts on crash (systemd user service). Then: `systemctl --user restart duck` (after `git pull`), `systemctl --user stop duck`, logs `tail -f ~/duck.log`. Don't also start it by hand (two can't share the camera).
 - Run: `python3 duck.py` · `--no-mic` · `--no-sign` · `--source 0` (laptop webcam) · `--preview` (http://<pi-ip>:8090)
 - Camera won't start: `./doctor.sh`
 - Models: `./get_models.sh`
