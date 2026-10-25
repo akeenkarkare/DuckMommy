@@ -304,19 +304,25 @@ function handleDuck(msg) {
   const event = { user_id: activeUserId, type: msg.event.type, value: msg.event.value ?? null, ts };
   recentEvents(activeUserId).push(event);
   sendToUser(activeUserId, { type: 'event', event });
-  alertPhone(event, log);   // fire and forget; no-op unless NTFY_TOPIC is set
   log('event', event.type, JSON.stringify(event.value));
-  if (event.type === 'sentry' && event.value?.person_confirmed) textSentryAlert();
+  if (event.type === 'sentry' && event.value?.person_confirmed) sentryAlerts(event);   // fire and forget
+}
+
+// A confirmed person: push to the active user's own ntfy topic and text their phone number.
+// The profile is read now, so a topic or number changed a minute ago on the dashboard is the one used.
+async function sentryAlerts(event) {
+  const userId = event.user_id;
+  const { data: profile, error } = await supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle();
+  if (error) log('sentry alerts: profile lookup failed', error.message);
+  alertPhone(event, log, profile?.ntfy_topic || undefined);   // undefined -> the shared NTFY_TOPIC, if any
+  textSentryAlert(profile?.phone);
 }
 
 // Same moment and same words as the dashboard's "Possible intruder" pop-up, even with no tab open.
-async function textSentryAlert() {
-  if (!activeUserId || !imessageConfigured(IMESSAGE_ENV) || Date.now() - lastIMessageAt < IMESSAGE_COOLDOWN_MS) return;
+async function textSentryAlert(phone) {
+  if (!imessageConfigured(IMESSAGE_ENV) || Date.now() - lastIMessageAt < IMESSAGE_COOLDOWN_MS) return;
   lastIMessageAt = Date.now();
-  // read it now, so a number changed a minute ago on the dashboard is the one that gets texted
-  const { data, error } = await supabase.from('profiles').select('phone').eq('user_id', activeUserId).maybeSingle();
-  if (error) log('sentry iMessage: phone lookup failed (run migration 006?):', error.message);
-  const to = data?.phone || IMESSAGE_ENV.SENTRY_IMESSAGE_TO;
+  const to = phone || IMESSAGE_ENV.SENTRY_IMESSAGE_TO;
   if (!to) return log('sentry iMessage skipped: no phone on the profile and no SENTRY_IMESSAGE_TO');
   try {
     await sendIMessage(IMESSAGE_ENV, to, sentryText());

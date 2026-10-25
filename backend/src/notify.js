@@ -1,5 +1,6 @@
 // Phone alerts: a confirmed sentry person -> push via ntfy.sh (and the optional Mac iMessage bridge).
-// No-op unless NTFY_TOPIC is set. Never throws: an alert failing must not affect the relay.
+// The topic is the active user's own (profiles.ntfy_topic, passed in by the relay); NTFY_TOPIC is the
+// shared fallback. No-op without either. Never throws: an alert failing must not affect the relay.
 
 const NTFY_URL = (process.env.NTFY_URL || 'https://ntfy.sh').replace(/\/$/, '');
 const NTFY_TOPIC = process.env.NTFY_TOPIC;
@@ -11,10 +12,10 @@ export function alertText(event) {
   return `There's a person in your room${dark}. Seen at ${when}.`;
 }
 
-export async function alertPhone(event, log = console.log) {
-  if (!NTFY_TOPIC || event.type !== 'sentry' || !event.value?.person_confirmed) return;
+export async function alertPhone(event, log = console.log, topic = NTFY_TOPIC) {
+  if (!topic || event.type !== 'sentry' || !event.value?.person_confirmed) return;
   try {
-    const res = await fetch(`${NTFY_URL}/${encodeURIComponent(NTFY_TOPIC)}`, {
+    const res = await fetch(`${NTFY_URL}/${encodeURIComponent(topic)}`, {
       method: 'POST',
       headers: { Title: 'DuckMommy sentry', Priority: 'high', Tags: 'duck,rotating_light' },
       body: alertText(event),

@@ -68,6 +68,73 @@ function SentryPhone() {
   );
 }
 
+// Phone alerts through ntfy: the user's own unguessable topic (profiles.ntfy_topic). ntfy has no
+// recipients, only topics, so whoever subscribes to this one in the ntfy app gets the sentry pushes.
+const NTFY = 'https://ntfy.sh';
+const newTopic = () => `duckmommy-${Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('')}`;
+
+function NtfyAlerts() {
+  const [topic, setTopic] = useState(null);
+  const [state, setState] = useState('loading');   // loading | ready | missing (migration 007) | message
+  const [note, setNote] = useState('');
+  const userId = useRef(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      userId.current = session?.user.id;
+      const { data, error } = await supabase.from('profiles').select('ntfy_topic').eq('user_id', userId.current).maybeSingle();
+      if (error) return setState(error.code === '42703' ? 'missing' : `Couldn’t load phone alerts: ${error.message}`);
+      setTopic(data?.ntfy_topic ?? null);
+      setState('ready');
+    });
+  }, []);
+
+  const save = async (t) => {
+    const { error } = await supabase.from('profiles').update({ ntfy_topic: t }).eq('user_id', userId.current);
+    if (error) return setNote(`Not saved: ${error.message}`);
+    setTopic(t);
+    setNote(t ? 'Saved. Subscribe to it in the ntfy app, then send a test.' : 'Phone alerts are off.');
+  };
+  const test = async () => {
+    try {
+      const r = await fetch(`${NTFY}/${topic}`, { method: 'POST', headers: { Title: 'DuckMommy sentry' }, body: 'Test from your duck. Sentry alerts will look like this.' });
+      setNote(r.ok ? 'Test sent. It should be on your phone now.' : `ntfy said ${r.status}.`);
+    } catch { setNote('Couldn’t reach ntfy.sh from this browser.'); }
+  };
+
+  if (state === 'loading') return <div className="skel" style={{ height: 68 }} aria-hidden />;
+  if (state === 'missing') return <p className="hint">Run backend/supabase/migrations/007_ntfy_topic.sql to get phone alerts.</p>;
+  if (state !== 'ready') return <p className="error">{state}</p>;
+  return (
+    <div className="card ntfy">
+      <h2>Phone alerts <span className="sub">ntfy push</span></h2>
+      {!topic ? (
+        <>
+          <p className="hint" style={{ margin: '0 0 10px' }}>Get a push on your phone the moment sentry spots someone. Free, with the ntfy app (iOS and Android).</p>
+          <button className="btn primary" onClick={() => save(newTopic())}><BellIcon /> Set up phone alerts</button>
+        </>
+      ) : (
+        <>
+          <ol className="steps">
+            <li>Install <b>ntfy</b> from the App Store or Google Play.</li>
+            <li>In ntfy tap <b>+</b> and subscribe to <code className="topic">{topic}</code>
+              <button className="chip" onClick={() => navigator.clipboard?.writeText(topic).then(() => setNote('Topic copied.'))}>Copy</button></li>
+            <li>Send yourself a test.</li>
+          </ol>
+          <div className="row">
+            <button className="btn primary" onClick={test}><BellIcon /> Send a test</button>
+            <a className="btn" href={`${NTFY}/${topic}`} target="_blank" rel="noreferrer">Open in ntfy <LinkOutIcon size={15} /></a>
+            <button className="btn link" onClick={() => save(newTopic())} title="Use if someone else found out your topic">New topic</button>
+            <button className="btn link" onClick={() => save(null)}>Turn off</button>
+          </div>
+          <p className="hint" style={{ margin: '8px 0 0' }}>Private: anyone who knows this topic can read the alerts, so don’t share it.</p>
+        </>
+      )}
+      {note && <p className="hint" style={{ margin: '8px 0 0' }}>{note}</p>}
+    </div>
+  );
+}
+
 function DesktopAlerts() {
   const [state, setState] = useState('unsupported');
   useEffect(() => setState(desktopAlertsState()), []);
@@ -107,6 +174,7 @@ function CameraPanel({ events, now, windowMs, s, watch, video, canCommand, liveR
         <h3>Sentry · night vision</h3>
         <Toggle s={s} k="sentry_enabled" label="Guard my desk while I'm away" hint="Or say “hey duck, sentry mode on”. Anyone who sits down then counts as a possible intruder until you press It's me." />
         <DesktopAlerts />
+        <NtfyAlerts />
         <SentryPhone />
         <Toggle s={s} k="sign_enabled" label="Sign to Duck" hint="Reads ASL signs aloud" />
         {sentries.length > 0 && (

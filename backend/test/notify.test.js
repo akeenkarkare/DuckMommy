@@ -32,6 +32,14 @@ test('a confirmed person: one POST to ntfy.sh/<topic> with the alert text', asyn
   assert.deepEqual(logs, ['phone alert sent']);
 });
 
+test("the user's own topic wins over NTFY_TOPIC", async () => {
+  const f = stubFetch(async () => new Response('', { status: 200 }));
+  try {
+    await alertPhone(sentry(true), () => {}, 'duckmommy-jason1234abcd');
+  } finally { f.restore(); }
+  assert.deepEqual(f.calls.map((c) => c.url), ['https://ntfy.sh/duckmommy-jason1234abcd']);
+});
+
 test('motion only, other event types: no POST', async () => {
   const f = stubFetch(async () => new Response(''));
   try {

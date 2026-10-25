@@ -28,6 +28,8 @@ create table public.profiles (
   display_name text check (char_length(display_name) <= 50),
   -- Sentry iMessage alerts (Photon), E.164. Read by the relay only, never pushed to the Pi. (migration 006)
   phone        text check (phone is null or phone ~ '^\+[1-9][0-9]{6,14}$'),
+  -- Sentry ntfy pushes go to this user's own topic (migration 007). Made by the dashboard.
+  ntfy_topic   text unique check (ntfy_topic is null or ntfy_topic ~ '^[A-Za-z0-9_-]{12,64}$'),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
