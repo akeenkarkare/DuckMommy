@@ -129,7 +129,7 @@ Each card: **needs** (the data it looks at) · **gets it from** · **looks for**
 
 ### 🎯 Lock-in coach — "when should the duck nudge you?"
 - **Needs:** presence, stillness (motion), slouch count, the agenda (calendar items pushed by the relay; links never reach the Pi), focus commands (START/FOCUS signs or dashboard).
-- **Looks for:** arrival brief, deadlines crossing 24 h / 3 h / 1 h / 15 min, events in 15 min, periodic check-ins (`coach_interval_min`), idle 5 min. Stays quiet while the duck talks, during calibration, < 240 s after its last line, and (except deadlines) during focus.
+- **Looks for:** arrival brief, deadlines crossing 3 h / 1 h / 15 min (one line for all items crossing at once), periodic check-ins (`coach_interval_min`, but at most every 45 min), idle 5 min. Stays quiet while the duck talks, during calibration, < 15 min after its last line (deadlines: 5 min), and (except deadlines) during focus.
 - **Emits:** `("coach", kind, facts)` → `coach/lines.py` writes the line (relay `/nudge` = Claude, templates offline) → spoken + `coach` event.
 - **Files:** `coach/coach.py` (brain), `coach/lines.py` (line writer). Thread-shared: guarded by `Duck.coach_lock`.
 

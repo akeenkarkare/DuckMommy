@@ -103,7 +103,7 @@ None right now.
 
 ## Google Calendar (via Auth0)
 The Calendar tab's **Connect Google Calendar** goes through Auth0's Google login. The relay then reads **every calendar in the user's Google list** (titles and times only, the next 7 days) into the same agenda as the iCal links.
-- **Reminders** (`src/reminders.js`): for every timed event the duck says *"In 5 minutes: X."* and *"X is starting now."*, and the dashboard shows the same line (`calendar` event, speech bubble). Plain sentences, no AI. The Pi coach no longer gives its own 15-minute event heads-up; it still handles deadlines (24 h / 3 h / 1 h / 15 min).
+- **Reminders** (`src/reminders.js`): for every timed event the duck says *"In 5 minutes: X."* and *"X is starting now."*, and the dashboard shows the same line (`calendar` event, speech bubble). Plain sentences, no AI. The Pi coach no longer gives its own 15-minute event heads-up; it still handles deadlines (3 h / 1 h / 15 min).
 - **Read my day** (`say_agenda`): today's remaining items, spoken by the duck.
 - Clicking an item opens it in calendar.google.com.
 - Code: `src/google.js` (Auth0 + Google Calendar API, plain fetch), relay messages `google_connect` / `google_disconnect` / `say_agenda`, callback `GET /auth/google/callback`. Only the Auth0 user id is stored (`google_calendar` table, migration 004); the Google tokens stay in Auth0.

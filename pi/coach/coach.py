@@ -27,12 +27,14 @@ from __future__ import annotations
 import random
 import time
 
-MIN_GAP_S = 240              # between two coach lines
+MIN_GAP_S = 15 * 60          # between two coach lines (was 4 min: Akeen found it too chatty)
+DEADLINE_GAP_S = 5 * 60      # a deadline crossing may come sooner after another line
+CHECKIN_MIN_S = 45 * 60      # check-ins at most this often, whatever the focus length is
 URGENT_GAP_S = 60            # event-starting-soon may cut the gap down to this
 ARRIVAL_DELAY_S = 20         # let "welcome back" / "sit up tall" finish first
 ARRIVAL_HORIZON_MIN = 24 * 60
 ARRIVAL_REPEAT_S = 30 * 60   # back from a short break with the same agenda -> no second brief
-DUE_THRESHOLDS_MIN = (24 * 60, 180, 60, 15)
+DUE_THRESHOLDS_MIN = (180, 60, 15)   # the arrival brief already covers "due tomorrow"
 EVENT_LEAD_MIN = 15
 STILL_NUDGE_S = 300          # matches pi/motion IDLE_TIMEOUT_S
 CHECKIN_JITTER = 0.2
@@ -160,7 +162,7 @@ class Coach:
             started = now if self._focus_started is None else self._focus_started
             worked = round((now - started) / 60)
             self.focus_until, self._focus_started = None, None
-            self._next_checkin = now + self.interval_s
+            self._next_checkin = now + self.checkin_s
             return self._line(now, "focus_done", wall, {"worked_minutes": worked}, ctx)
         if self.break_until is not None and now >= self.break_until:
             self.break_until = None
@@ -170,7 +172,8 @@ class Coach:
         if soon and since >= URGENT_GAP_S:
             self._fired.add((soon["id"], "event"))
             return self._line(now, "event", wall, {"item": self._brief(soon, wall)}, ctx)
-        if since < MIN_GAP_S:
+        due = self._due_crossed(wall) if since >= DEADLINE_GAP_S else None
+        if since < MIN_GAP_S and not due:
             return []
 
         if self._arrival_pending:
@@ -187,9 +190,9 @@ class Coach:
                 self._last_brief = (now, ids)
                 return self._line(now, "arrival", wall, {}, ctx)
 
-        due = self._due_crossed(wall)
         if due:
-            self._mark_due_fired(due, wall)
+            for item in self._upcoming(wall):   # one line covers every deadline crossing right now,
+                self._mark_due_fired(item, wall)   # not one line per item, four minutes apart
             return self._line(now, "deadline", wall, {"item": self._brief(due, wall)}, ctx)
 
         if (still_s is not None and still_s >= STILL_NUDGE_S and not self._still_nudged
@@ -204,9 +207,13 @@ class Coach:
         return []
 
     # ── helpers ────────────────────────────────────────────────────────────
+    @property
+    def checkin_s(self) -> float:
+        return max(self.interval_s, CHECKIN_MIN_S)
+
     def _schedule_checkin(self, now: float):
         jitter = 1 + CHECKIN_JITTER * (2 * self.rng() - 1)
-        self._next_checkin = now + self.interval_s * jitter
+        self._next_checkin = now + self.checkin_s * jitter
 
     @staticmethod
     def _minutes_until(item: dict, wall: float) -> float:
@@ -252,7 +259,7 @@ class Coach:
     def _line(self, now: float, kind: str, wall: float, extra: dict, ctx: dict | None = None) -> list[tuple]:
         self._last_line = now
         if self._next_checkin is not None and kind not in ("checkin", "focus_done"):
-            self._next_checkin = max(self._next_checkin, now + self.interval_s / 2)
+            self._next_checkin = max(self._next_checkin, now + self.checkin_s / 2)
         ctx = ctx or {}
         facts = {
             "time_of_day": time_of_day(wall),

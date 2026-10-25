@@ -106,16 +106,22 @@ class StepIn(unittest.TestCase):
         c._arrival_pending = False                          # skip the arrival brief
         _, out = run(c, 0, 200 * 60, step=10)
         deadlines = [f["item"]["in_minutes"] for _, k, f in out if k == "deadline"]
-        # first heard of at 200 min (and 3 h is too close to repeat), then 1 h, then 15 min
+        # 3 h, then 1 h, then 15 min, on time even with check-ins in between
         self.assertEqual(len(deadlines), 3, deadlines)
-        self.assertTrue(deadlines[0] == 200 and 55 <= deadlines[1] <= 60 and 10 <= deadlines[2] <= 15, deadlines)
+        self.assertTrue(deadlines[0] == 180 and 55 <= deadlines[1] <= 60 and 10 <= deadlines[2] <= 15, deadlines)
 
     def test_far_deadline_gets_each_threshold(self):
         c = make(agenda=[item("Project", 25 * 60)])
         c._arrival_pending = False
         _, out = run(c, 0, 25 * 60 * 60, step=60)
         deadlines = [f["item"]["in_minutes"] for _, k, f in out if k == "deadline"]
-        self.assertEqual(len(deadlines), 4, deadlines)      # 24 h, 3 h, 1 h, 15 min
+        self.assertEqual(len(deadlines), 3, deadlines)      # 3 h, 1 h, 15 min (the arrival brief covers tomorrow)
+
+    def test_many_deadlines_share_one_line(self):
+        c = make(agenda=[item(f"HW{n}", 170 + n) for n in range(5)])
+        c._arrival_pending = False
+        _, out = run(c, 0, 30 * 60, step=10)
+        self.assertEqual(kinds(out).count("deadline"), 1, kinds(out))   # not five lines, a few minutes apart
 
     def test_events_are_left_to_the_relay(self):
         c = make(agenda=[item("CSE 320 lecture", 18, kind="event")])
@@ -137,9 +143,9 @@ class StepIn(unittest.TestCase):
 
     def test_checkin_after_interval(self):
         c = make()
-        _, out = run(c, 0, 25 * 60 + 5, step=5)
+        _, out = run(c, 0, 45 * 60 + 5, step=5)             # check-ins at most every 45 min
         self.assertEqual(kinds(out), ["checkin"])
-        self.assertEqual(out[0][2]["minutes_at_desk"], 25)
+        self.assertEqual(out[0][2]["minutes_at_desk"], 45)
 
     def test_idle_nudge_once_per_still_period(self):
         c = make()
@@ -159,8 +165,10 @@ class StepIn(unittest.TestCase):
         self.assertEqual(out.count("idle"), 1)
 
     def test_interval_setting_is_live(self):
-        c = make({**SETTINGS, "coach_interval_min": 10})
-        _, out = run(c, 0, 11 * 60, step=5)
+        c = make({**SETTINGS, "coach_interval_min": 60})    # longer than the 45 min floor
+        _, out = run(c, 0, 59 * 60, step=5)
+        self.assertEqual(kinds(out), [])
+        _, out = run(c, 59 * 60, 2 * 60, step=5)
         self.assertEqual(kinds(out), ["checkin"])
 
 
