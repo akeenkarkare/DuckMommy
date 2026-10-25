@@ -74,6 +74,7 @@ Each card: **needs** (the data it looks at) · **gets it from** · **looks for**
   Cooldown 60 s after a real person, 15 s after a false alarm. Night vision automatic.
 - **Emits:** `sentry {distance_cm, person_confirmed, confidence, night, trigger}` + speaks `sentry_message`.
 - **Runs only when:** away **and** `sentry_enabled`.
+- **Sitting down while it's on** (`duck.py`): the arrival is a possible intruder: `sentry` event (`trigger: "arrive"`) + `sentry_message`, and no welcome, coach brief, posture/signs or "hey duck" until `sentry_enabled` goes off (dashboard "It's me", which the dashboard pops up with an alarm). Voice: "hey duck, sentry mode on".
 - **Files:** `sentry/watch.py` (brain), `sentry/vision.py` (perception), `sentry/run.py` (tool).
 
 ### 🤟 Sign to Duck — "what ASL word did they sign?"

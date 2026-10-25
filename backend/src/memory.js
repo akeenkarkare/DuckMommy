@@ -77,15 +77,16 @@ export function localTime(ms, tz) {
 const UNDERSTAND_SCHEMA = {
   type: 'object',
   properties: {
-    intent: { type: 'string', enum: ['remember', 'recall', 'remind', 'agenda', 'focus', 'other'] },
+    intent: { type: 'string', enum: ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'other'] },
     memory: { type: 'string' },
     question: { type: 'string' },
     reminder: { type: 'string' },
     remind_at: { type: 'string' },
     focus: { type: 'string', enum: ['', ...FOCUS_COMMANDS] },
+    sentry: { type: 'string', enum: ['', 'on', 'off'] },
     reply: { type: 'string' },
   },
-  required: ['intent', 'memory', 'question', 'reminder', 'remind_at', 'focus', 'reply'],
+  required: ['intent', 'memory', 'question', 'reminder', 'remind_at', 'focus', 'sentry', 'reply'],
   additionalProperties: false,
 };
 
@@ -100,6 +101,7 @@ export function buildUnderstandPrompt({ transcript, name, now = Date.now(), tz =
     '- remind: they want to be reminded of something at a later time ("remind me in 5 days to...", "remind me tomorrow at 3 to...", "in 20 minutes tell me to..."). Use remember instead when no reminding is asked for.',
     '- agenda: they ask about their calendar, schedule, deadlines or upcoming reminders ("what\'s on my calendar", "what do I have tomorrow", "when is my next class", "am I free at 3", "what\'s due this week", "what reminders do I have").',
     '- focus: they want to control a focus / lock-in session. Set focus to one of: start_focus ("let\'s lock in", "start a focus session", "pomodoro"), break ("I\'m taking a break"), finish ("I\'m done", "stop the session"), time_left ("how much time is left"), more_time ("give me more time", "add ten minutes").',
+    '- sentry: they want guard / sentry mode on or off ("sentry mode on", "guard my desk", "watch my stuff while I\'m gone", "turn off sentry"). Set sentry to on or off.',
     '- other: anything else: small talk ("how are you", "what\'s up"), a question, a joke, or too garbled to tell.',
     'For remember: write memory as one short, clear sentence in first person, as the user would write it in a notebook ("My keys are in the blue drawer."). Fix obvious mishearings when the meaning is clear (e.g. "the blew draw" -> "the blue drawer"). Keep names, numbers and codes exactly. Turn relative times into what they mean without inventing a date ("tomorrow at noon" stays "tomorrow at noon"). Never add facts that were not said. If the content is too garbled to understand, use intent other.',
     'For recall and agenda: write question as a clean version of what they are asking, keeping any time words ("5 days ago", "last Tuesday", "tomorrow").',
@@ -119,18 +121,21 @@ export async function understand({ apiKey, model, transcript, name, now = Date.n
     apiKey, model, system, user, fetchImpl,
     format: { type: 'json_schema', schema: UNDERSTAND_SCHEMA },
   });
-  const empty = { intent: 'other', memory: '', question: '', reminder: '', remind_at: '', focus: '', reply: '' };
+  const empty = { intent: 'other', memory: '', question: '', reminder: '', remind_at: '', focus: '', sentry: '', reply: '' };
   let out;
   try { out = JSON.parse(text); } catch { return empty; }
-  const intent = ['remember', 'recall', 'remind', 'agenda', 'focus'].includes(out.intent) ? out.intent : 'other';
+  let intent = ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry'].includes(out.intent) ? out.intent : 'other';
   const focus = FOCUS_COMMANDS.includes(out.focus) ? out.focus : '';
+  const sentry = ['on', 'off'].includes(out.sentry) ? out.sentry : '';
+  if ((intent === 'focus' && !focus) || (intent === 'sentry' && !sentry)) intent = 'other';
   return {
-    intent: intent === 'focus' && !focus ? 'other' : intent,
+    intent,
     memory: cleanText(out.memory, MAX_MEMORY_CHARS),
     question: cleanText(out.question, MAX_MEMORY_CHARS),
     reminder: cleanText(out.reminder, MAX_REMINDER_CHARS).replace(/[.!?]+$/, ''),
     remind_at: String(out.remind_at ?? '').trim(),
     focus,
+    sentry: intent === 'sentry' ? sentry : '',
     reply: intent === 'other' ? cleanText(out.reply, MAX_ANSWER_CHARS) : '',
   };
 }

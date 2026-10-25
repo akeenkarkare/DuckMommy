@@ -9,7 +9,8 @@ const MAX_LOG = 300;
 
 // Live connection to the relay. Re-authenticates with a fresh session on every reconnect.
 // onEvent(event) fires for live events only (not the replayed buffer), e.g. to animate the duck.
-export function useRelay(enabled, onEvent) {
+// onSettings(patch): the relay changed a setting (voice command), so the toggles can follow.
+export function useRelay(enabled, onEvent, onSettings) {
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState({ duck_connected: false, with_you: false });
   const [events, setEvents] = useState([]);
@@ -22,6 +23,8 @@ export function useRelay(enabled, onEvent) {
   const watchingRef = useRef(false);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  const onSettingsRef = useRef(onSettings);
+  onSettingsRef.current = onSettings;
 
   useEffect(() => {
     if (!enabled) return;
@@ -56,6 +59,7 @@ export function useRelay(enabled, onEvent) {
         else if (msg.type === 'google_auth_url') window.location.assign(msg.url);   // Connect Google Calendar -> Auth0
         else if (msg.type === 'google_error') setGoogleError(msg.error);
         else if (msg.type === 'video_status') setVideo(msg);
+        else if (msg.type === 'settings_patch') onSettingsRef.current?.(msg.settings ?? {});
       };
       ws.onclose = (e) => {
         setConnected(false);

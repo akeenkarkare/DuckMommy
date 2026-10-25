@@ -601,6 +601,24 @@ async function handleVoice(req, res) {
       return voiceReply(res, 200, { intent: 'agenda', heard, say: answer || "Nothing on your calendar for that. You're free, bestie." });
     }
 
+    if (meant.intent === 'sentry') {   // "hey duck, sentry mode on": same setting as the dashboard toggle
+      const on = meant.sentry === 'on';
+      const { error } = await supabase.from('settings').update({ sentry_enabled: on }).eq('user_id', userId);
+      if (error) {
+        log('sentry setting failed', error.message);
+        return voiceReply(res, 200, { intent: 'sentry', heard, say: "Couldn't flip sentry mode, that's an L. Try the dashboard." });
+      }
+      if (userId === activeUserId && activeSettings) {
+        activeSettings.sentry_enabled = on;
+        pushSettings();
+      }
+      sendToUser(userId, { type: 'settings_patch', settings: { sentry_enabled: on } });   // flips the dashboard toggle
+      log('voice sentry', on ? 'on' : 'off');
+      return voiceReply(res, 200, { intent: 'sentry', heard, say: on
+        ? "Sentry mode on. Go do your thing, I'll guard the desk and ping your laptop if anyone shows up."
+        : 'Sentry mode off. The desk is all yours, bestie.' });
+    }
+
     if (meant.intent === 'focus') {   // the duck's own coach answers ("Locking in for 25...")
       if (userId !== activeUserId || !duck) return voiceReply(res, 200, { intent: 'focus', heard, say: "My focus timer is ghosting me right now. Try again in a sec." });
       send(duck, { type: 'command', command: { type: 'coach', name: meant.focus } });

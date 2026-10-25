@@ -28,7 +28,7 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 2. **Press to quack.** The pressure sensor triggers a quack (`assets/quack.wav`, made with ElevenLabs sound effects) and logs a `pat` event.
 3. **Dashboard.** Login, then a posture-over-time graph for that user only. Start basic and add the duck theme last.
 4. **NFC focus tag.** Tapping the tag opens iOS Shortcuts, where the user picks what to block (like a Brick device). Goal: judges should NOT have to build a Shortcut by hand.
-5. **Sentry mode.** The ultrasonic sensor detects motion, then the camera confirms a person with OpenCV (works in night vision) and logs a `sentry` event.
+5. **Sentry mode.** The ultrasonic sensor detects motion, then the camera confirms a person with OpenCV (works in night vision) and logs a `sentry` event. "Hey duck, sentry mode on" arms it; anyone who sits down while it's on is a possible intruder (dashboard pop-up: Watch feed / It's me).
 6. **Voice.** ElevenLabs in the duck's own voice; the dashboard sets what it says.
 7. **Sign to Duck.** The user signs ASL word signs at the camera; the duck speaks the phrase (MediaPipe Holistic + DTW templates, no API) and logs a `sign` event. Code: `pi/asl`.
 8. **Sound alerts.** The mic hears a doorbell, phone, alarm, notification or someone calling, flashes the LED in a pattern per sound, and logs a `sound` event.

@@ -309,3 +309,26 @@ select.input { width: 100%; appearance: auto; }
 .btn.icon.nest-forget { display: grid; place-items: center; }
 .nest-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .nest-empty svg { color: var(--duck); }
+
+/* Sentry: "possible intruder" pop-up (components/IntruderAlert.js) */
+.intruder-backdrop {
+  position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px;
+  background: rgba(10, 4, 4, 0.62); pointer-events: auto; animation: rise 0.25s var(--ease) both;
+}
+.intruder {
+  width: min(420px, 100%); padding: 26px 24px 18px; border-radius: 24px; text-align: center;
+  display: grid; gap: 12px; justify-items: center; border: 1px solid var(--critical);
+  box-shadow: 0 0 0 4px rgba(255, 90, 82, 0.18), 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.intruder h2 { margin: 0; font-size: 20px; }
+.intruder p { margin: 0; color: var(--text-muted); }
+.intruder .row { justify-content: center; flex-wrap: wrap; }
+.intruder-icon { font-size: 40px; animation: intruder-pulse 1s ease-in-out infinite; }
+.intruder-banner {
+  position: fixed; top: 76px; left: 50%; transform: translateX(-50%); z-index: 20; pointer-events: auto;
+  display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 999px;
+  border: 1px solid var(--critical); white-space: nowrap; max-width: calc(100vw - 32px);
+}
+.btn.link { background: none; border-color: transparent; color: var(--text-muted); }
+@keyframes intruder-pulse { 50% { transform: scale(1.15); } }
+@media (prefers-reduced-motion: reduce) { .intruder-icon { animation: none; } }

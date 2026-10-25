@@ -9,6 +9,7 @@ import { useDuck } from '@/components/duck/DuckContext';
 import { HOTSPOTS, ACTIVITY, CALENDAR, NEST } from '@/components/duck/hotspots';
 import { PANELS, focusSession } from '@/components/Panels';
 import ScenePicker from '@/components/ScenePicker';
+import IntruderAlert, { raiseIntruderAlarm } from '@/components/IntruderAlert';
 
 function useNow(ms) {
   const [now, setNow] = useState(() => Date.now());
@@ -35,11 +36,17 @@ export default function Dashboard() {
   const [name, setName] = useState('');
   const [touched, setTouched] = useState(false);
   const now = useNow(5000);
+  const [intruder, setIntruder] = useState(null);   // { event, compact }: sentry spotted someone
+  const [liveRequest, setLiveRequest] = useState(0); // bump to open the Camera panel's live view
 
   const s = useSettings(user?.id, () => send({ type: 'settings_changed' }));
 
   // Live events animate the 3D duck (with the user's own messages in its speech bubble).
   const onEvent = useCallback((e) => {
+    if (e.type === 'sentry' && e.value?.person_confirmed) {
+      setIntruder({ event: e, compact: false });
+      raiseIntruderAlarm();
+    }
     if (e.type === 'coach' && e.value?.text) return bridge.current.react({ type: 'say', value: { text: e.value.text } });
     if (e.type === 'memory') {
       const v = e.value ?? {};
@@ -52,7 +59,7 @@ export default function Dashboard() {
     bridge.current.react({ ...e, message });
   }, [bridge, s.settings]);
 
-  const { connected, status, events, lastAck, send, agenda, googleError, video, watch, bufferMs } = useRelay(!!user, onEvent);
+  const { connected, status, events, lastAck, send, agenda, googleError, video, watch, bufferMs } = useRelay(!!user, onEvent, s.apply);
   const [calendarNotice, setCalendarNotice] = useState(null);
   const googleNotice = googleError ? { ok: false, text: googleError } : calendarNotice;
   const canCommand = connected && status.duck_connected && status.with_you;
@@ -150,6 +157,11 @@ export default function Dashboard() {
         ))}
       </nav>
 
+      <IntruderAlert alert={intruder}
+        onWatch={() => { setFocus('camera'); setLiveRequest((n) => n + 1); setIntruder((a) => a && { ...a, compact: true }); }}
+        onMine={() => { s.change('sentry_enabled', false, 0); setIntruder(null); }}
+        onDismiss={() => setIntruder(null)} />
+
       <aside className={`panel glass ${panel ? 'open' : ''}`} aria-hidden={!panel}>
         {panel && (
           <>
@@ -162,7 +174,7 @@ export default function Dashboard() {
             </div>
             <div className="panel-body" key={focus}>
               <Body events={recent} now={now} windowMs={bufferMs} s={s} send={send} canCommand={canCommand}
-                duck={bridge.current} lastAck={lastAck} agenda={agenda} googleNotice={googleNotice} connected={connected} allEvents={events} watch={watch} video={video} />
+                duck={bridge.current} lastAck={lastAck} agenda={agenda} googleNotice={googleNotice} connected={connected} allEvents={events} watch={watch} video={video} liveRequest={liveRequest} />
               {s.state && <p className="hint">{s.state}</p>}
             </div>
           </>

@@ -37,5 +37,8 @@ export function useSettings(userId, onSaved) {
     timer.current = setTimeout(save, debounceMs);
   }, [save]);
 
-  return { settings, change, state };
+  // A change made elsewhere (e.g. "hey duck, sentry mode on" via the relay): show it, don't re-save it.
+  const apply = useCallback((patch) => setSettings((s) => (s ? { ...s, ...patch } : s)), []);
+
+  return { settings, change, apply, state };
 }

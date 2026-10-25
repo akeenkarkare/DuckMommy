@@ -84,6 +84,11 @@ class Duck:
         self.voice_url = (http + "/voice") if relay else None
         self.at_desk = False   # set by on_presence; "hey duck" only listens while someone is here
         self.talking = False   # a "hey duck" turn is on: hold other lines, pause sign reading
+        # Sentry on + someone sits down = possible intruder until you say it's you (dashboard "It's me"
+        # or sentry off). Meanwhile no welcome, no coach brief, no posture log and no "hey duck".
+        self.intruder = False
+        self._disarmed = False     # set by on_settings (sentry turned off), handled by the main loop
+        self._last_alert = float("-inf")
         self._held: list[str] = []
         self._held_lock = threading.Lock()
         self.voice = Voice(self.settings, tts_url, token)
@@ -121,6 +126,8 @@ class Duck:
     def on_settings(self, s: dict):
         self.settings.update(s)
         log(f"settings from dashboard: {json.dumps(s)}")
+        if self.intruder and not self.settings.get("sentry_enabled"):
+            self._disarmed = True   # "It's me" on the dashboard (or sentry off): welcome them properly
         self.voice.prefetch([self.settings.get(k) for k in ("posture_message", "sentry_message", "presence_message")])
 
     def on_command(self, c: dict):
@@ -144,6 +151,8 @@ class Duck:
     def act(self, actions):
         for a in actions:
             if a[0] == "event":
+                if a[1] == "sentry" and a[2].get("person_confirmed"):
+                    self._last_alert = time.monotonic()
                 self.emit(a[1], a[2])
             elif a[0] == "speak":    # posture / calibration / sentry / signs: repeat on their own
                 self.say(a[1], drop_if_talking=True)
@@ -314,22 +323,40 @@ class Duck:
         idle_away = False              # marked away for not moving; wakes on camera motion
         slouches = 0                   # this sitting, for the coach
 
+        def welcome(now):
+            nonlocal slouches
+            self.at_desk = True
+            if self.settings.get("presence_message"):
+                self.say(self.settings["presence_message"])
+            motion.reset(now)
+            slouches = 0
+            with self.coach_lock:
+                self.coach.on_arrive(now)
+
         def on_presence(ev, distance, reason=None):
-            nonlocal umotion, slouches
+            nonlocal umotion
             now = time.monotonic()
-            self.at_desk = ev == "arrive"
+            self.at_desk = False
             value = {"present": ev == "arrive", "distance_cm": None if distance is None else round(distance)}
             if reason:
                 value["reason"] = reason
+            if ev == "arrive" and self.settings.get("sentry_enabled"):
+                self.intruder = True
+                value["sentry"] = True
+                self.emit("presence", value)
+                if now - self._last_alert > 30:   # the sentry check may have just announced them
+                    self._last_alert = now
+                    self.emit("sentry", {"distance_cm": value["distance_cm"], "person_confirmed": True,
+                                         "confidence": None, "night": cam.night, "trigger": "arrive"})
+                    if self.settings.get("sentry_message"):
+                        self.say(self.settings["sentry_message"])
+                log("arrive while sentry is on: possible intruder (dashboard: It's me / sentry off)")
+                return
             if ev == "arrive":
                 self.emit("presence", value)
-                if self.settings.get("presence_message"):
-                    self.say(self.settings["presence_message"])
-                motion.reset(now)
-                slouches = 0
-                with self.coach_lock:
-                    self.coach.on_arrive(now)
+                welcome(now)
             else:
+                self.intruder = False
                 self.act(judge.reset())
                 if words:
                     self.act(words.finish())
@@ -343,6 +370,13 @@ class Duck:
         try:
             while True:
                 now = time.monotonic()
+                if self._disarmed:
+                    self._disarmed = False
+                    if self.intruder:
+                        self.intruder = False
+                        log("sentry off: it's you")
+                        if presence.present:
+                            welcome(now)
                 distance = self.sonar.distance_cm() if self.sonar else None
                 if self.sonar and not idle_away:
                     ev = presence.update_distance(now, distance)
@@ -374,7 +408,7 @@ class Duck:
                         if ("state", "ACTIVE") in motion.update(now, rgb):
                             idle_away = False      # moved: presence takes over again (arrives normally)
                             log("movement: waking up")
-                    elif presence.present:
+                    elif presence.present and not self.intruder:
                         motion.update(now, rgb)
                         posture = judge.update(now, points)
                         # first prompt of each slouch (reminders carry a longer slouch_duration_s)
@@ -409,7 +443,7 @@ class Duck:
                             last_video = now
                 self.act(watch.tick(now))
 
-                if presence.present:
+                if presence.present and not self.intruder:
                     quiet = self.voice.busy() or judge.calibrating
                     still = motion.still_for(now) if rgb is not None else None   # only judge stillness we can see
                     with self.coach_lock:

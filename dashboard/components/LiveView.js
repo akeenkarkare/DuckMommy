@@ -4,12 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 
 // Live camera view from the duck, through the relay. Opt-in: nothing streams until you press Watch,
 // and it stops when you close it or leave the panel. Frames are shown and dropped, never saved.
-export default function LiveView({ watch, video, canCommand }) {
-  const [on, setOn] = useState(false);
+export default function LiveView({ watch, video, canCommand, autoStart = 0 }) {
+  const [on, setOn] = useState(autoStart > 0);
   const [lastFrame, setLastFrame] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const imgRef = useRef(null);
   const urlRef = useRef(null);
+
+  useEffect(() => {   // "Watch feed" on the intruder alert
+    if (autoStart > 0) setOn(true);
+  }, [autoStart]);
 
   useEffect(() => {
     if (!on) return;

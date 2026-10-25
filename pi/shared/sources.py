@@ -1,12 +1,14 @@
 """Frame sources with one interface: start(), stop(), read() -> RGB array or None, close().
 
-PiCamera handles night vision. The camera module has IR LEDs that switch on
-by themselves in the dark (light sensor on the board), so software only has to
-make the most of the IR light:
+PiCamera handles night vision. A NoIR camera (no infrared filter) sees infrared light, but the
+Pi Camera Module 3 NoIR has NO IR LEDs of its own: in a dark room it needs an 850 nm IR
+illuminator next to it (invisible to people, bright to the camera). Software makes the most of
+whatever light there is:
 
   day    30 fps, colour, normal denoise
-  night  15-30 fps (auto exposure may stretch frames to ~66 ms), black & white
-         (IR has no colour, only a pink cast + chroma noise), high-quality denoise
+  night  8-30 fps (auto exposure may stretch frames to 125 ms and uses the long exposure mode,
+         +1 EV), black & white (IR has no colour, only a pink cast + chroma noise),
+         high-quality denoise
   auto   (default) switches using libcamera's per-frame Lux estimate, with
          hysteresis and a hold time so it can't flicker. Right after the
          camera wakes (sentry), it decides at once from the first settled frame.
@@ -32,19 +34,30 @@ def log(msg: str):
     print(f"# {msg}", file=sys.stderr, flush=True)
 
 
+def _exposure_mode(lc, name: str) -> dict:
+    mode = getattr(getattr(lc, "AeExposureModeEnum", None), name, None)
+    return {"AeExposureMode": mode} if mode is not None else {}
+
+
 def _day_controls(lc):
     return {
         "FrameDurationLimits": (33333, 33333),
         "Saturation": 1.0,
         "NoiseReductionMode": lc.draft.NoiseReductionModeEnum.Fast,
+        "ExposureValue": 0.0,
+        **_exposure_mode(lc, "Normal"),
     }
 
 
 def _night_controls(lc):
+    # Longer frames = more light per frame. 125 ms keeps ~8 fps, enough for presence, sentry
+    # and posture (signs get worse in the dark anyway).
     return {
-        "FrameDurationLimits": (33333, 66666),
+        "FrameDurationLimits": (33333, 125000),
         "Saturation": 0.0,
         "NoiseReductionMode": lc.draft.NoiseReductionModeEnum.HighQuality,
+        "ExposureValue": 1.0,
+        **_exposure_mode(lc, "Long"),
     }
 
 
