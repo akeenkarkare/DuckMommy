@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useRelay } from '@/lib/useRelay';
 import { useSettings } from '@/lib/useSettings';
 import { useDuck } from '@/components/duck/DuckContext';
-import { HOTSPOTS, ACTIVITY, CALENDAR } from '@/components/duck/hotspots';
+import { HOTSPOTS, ACTIVITY, CALENDAR, NEST } from '@/components/duck/hotspots';
 import { PANELS, focusSession } from '@/components/Panels';
 import ScenePicker from '@/components/ScenePicker';
 
@@ -41,6 +41,7 @@ export default function Dashboard() {
   // Live events animate the 3D duck (with the user's own messages in its speech bubble).
   const onEvent = useCallback((e) => {
     if (e.type === 'coach' && e.value?.text) return bridge.current.react({ type: 'say', value: { text: e.value.text } });
+    if (e.type === 'memory') return bridge.current.react({ type: 'say', value: { text: e.value?.action === 'recall' ? e.value.answer : 'Saved to your nest' } });
     const st = s.settings ?? {};
     const message = e.type === 'posture' ? st.posture_message : e.type === 'sentry' ? st.sentry_message : e.type === 'presence' ? st.presence_message : undefined;
     bridge.current.react({ ...e, message });
@@ -113,7 +114,7 @@ export default function Dashboard() {
 
   const panel = focus && PANELS[focus];
   const Body = panel?.Body;
-  const dockItems = [...HOTSPOTS, CALENDAR, ACTIVITY];
+  const dockItems = [...HOTSPOTS, CALENDAR, NEST, ACTIVITY];
 
   return (
     <>

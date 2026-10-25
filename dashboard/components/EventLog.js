@@ -29,6 +29,7 @@ function describe({ type, value: v }) {
     case 'sign': return `Signed: “${v.text}”`;
     case 'calendar': return `🔔 ${v.text}`;
     case 'sound': return `${SOUND_LABELS[v.kind] ?? v.label} · ${Math.round(v.score * 100)}% sure · LED on`;
+    case 'memory': return v.action === 'saved' ? 'Saved a note to your nest' : 'Answered a question from your notes';
     case 'coach': return `🦆 “${v.text}”${v.source === 'template' ? ' · offline line' : ''}`;
     default: return JSON.stringify(v);
   }

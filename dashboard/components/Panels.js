@@ -5,6 +5,7 @@ import SlouchChart from './SlouchChart';
 import SignCard from './SignCard';
 import EventLog from './EventLog';
 import LiveView from './LiveView';
+import NestPanel from './NestPanel';
 import { RangeField, SelectField, TextField, Toggle } from './Controls';
 
 const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
@@ -335,5 +336,6 @@ export const PANELS = {
   microphone: { kicker: 'Chest', title: 'Microphone', Body: MicrophonePanel },
   focus: { kicker: 'Back', title: 'Focus & coach', Body: FocusPanel },
   calendar: { kicker: 'Deadlines', title: 'Calendar', Body: CalendarPanel },
+  nest: { kicker: 'Memories', title: 'Nest', Body: NestPanel },
   activity: { kicker: 'Live', title: 'Activity', Body: ActivityPanel },
 };

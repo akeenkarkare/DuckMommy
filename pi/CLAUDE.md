@@ -101,6 +101,16 @@ Each card: **needs** (the data it looks at) · **gets it from** · **looks for**
 - **Emits:** `sound {kind, label, score}` + `led <kind>` (each kind has its own blink pattern).
 - **Files:** `sounds/alerts.py` (brain), `sounds/listener.py` (perception), `sounds/led.py` (output).
 
+### 🧠 Memory locker — "hey duck, remember ..." / "what did I tell you ...?"
+- **Needs:** the same 0.5 s mic chunks as sound alerts (`SoundListener(on_audio=...)`, so the mic is opened once).
+- **Wake word:** offline Vosk with a grammar of just `hey duck` / `okay duck` / `hi duck` (`models/vosk-small-en`).
+  Nothing leaves the Pi before the wake word. The last 1.5 s are kept so "hey duck remember…" in one breath works.
+- **Then:** records until 1.2 s of quiet (15 s max), LED `listening` while it does, posts the WAV to the relay's
+  `POST /voice`. The relay transcribes (ElevenLabs), Claude cleans it up and decides remember / recall,
+  saves to or searches Supabase `memories`, and returns the line to say. Ignored while the duck is talking.
+- **Files:** `memory/wake.py` (Vosk), `memory/segment.py` (when to stop recording), `memory/talk.py` (glue),
+  `memory/run.py` (try it alone, or `--text` without a mic). Off with `--no-talk`.
+
 ### 🦆 Press to quack
 - **Needs:** press / release edges. **Gets it from:** pressure module digital out on `PRESS_PIN` (gpiozero `Button`, callback thread).
 - **Emits:** quack immediately on press (if `quack_enabled`), `pat {touch_ms}` on release.
@@ -165,7 +175,7 @@ plus `.night` and `.lux`. `read()` may return `None`; callers must skip that fra
 ## 4. The main loop (`duck.py Duck.run`) — who runs when
 
 ```
-threads:  uplink (WS)   ·   mic listener (YAMNet)   ·   gpiozero button callbacks   ·   voice worker
+threads:  uplink (WS)   ·   mic listener (YAMNet + hey duck)   ·   gpiozero button callbacks   ·   voice worker
 main loop, every tick:
   1. ultrasonic distance → Presence → arrive/leave
   2. sentry stage 1 (if away + sentry_enabled + ultrasonic wake)

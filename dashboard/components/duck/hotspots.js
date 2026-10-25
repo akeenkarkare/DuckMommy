@@ -11,5 +11,6 @@ export const HOTSPOTS = [
 
 export const ACTIVITY = { id: 'activity', title: 'Activity', sub: 'Everything, live' };
 export const CALENDAR = { id: 'calendar', title: 'Calendar', sub: 'Deadlines + events' };
+export const NEST = { id: 'nest', title: 'Nest', sub: 'What you told it to remember' };
 
-export const byId = (id) => HOTSPOTS.find((h) => h.id === id) ?? [ACTIVITY, CALENDAR].find((p) => p.id === id) ?? null;
+export const byId = (id) => HOTSPOTS.find((h) => h.id === id) ?? [ACTIVITY, CALENDAR, NEST].find((p) => p.id === id) ?? null;

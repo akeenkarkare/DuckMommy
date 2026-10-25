@@ -79,6 +79,8 @@ class Duck:
         if relay:
             http = relay.replace("wss://", "https://").replace("ws://", "http://").rstrip("/")
             tts_url, nudge_url = http + "/tts", http + "/nudge"
+        self.voice_url = (http + "/voice") if relay else None
+        self.at_desk = False   # set by on_presence; "hey duck" only listens while someone is here
         self.voice = Voice(self.settings, tts_url, token)
         self.coach = Coach(self.settings)
         self.coach_lock = threading.Lock()   # touched by the main loop and the relay thread
@@ -178,6 +180,20 @@ class Duck:
             self._pressed_at = None
 
     # ── microphone (listener thread) ────────────────────────────────────────
+    def talk_listener(self):
+        """'hey duck, remember ...' / 'what did I tell you ...' -> relay /voice (pi/memory)."""
+        if self.args.no_talk:
+            return None
+        from memory.wake import WakeWord
+        if not WakeWord.available():
+            return None
+        from memory.talk import TalkToDuck
+        talk = TalkToDuck(WakeWord(), self.voice, self.voice_url, self.env.get("DUCK_TOKEN"),
+                          on_listening=lambda on: self.led.show("listening" if on else "heard"),
+                          present=lambda: self.at_desk)
+        log('talk to duck: say "hey duck, remember ..." or "hey duck, what did I tell you ...?"')
+        return talk.threaded()
+
     def on_sound(self, now: float, categories):
         self.act(self.alerts.update(now, categories, muted=self.voice.busy()))
 
@@ -235,7 +251,7 @@ class Duck:
             self.uplink.start()
         if not args.no_mic:
             from sounds.listener import SoundListener
-            SoundListener(self.on_sound, self.mic_device).start()
+            SoundListener(self.on_sound, self.mic_device, on_audio=self.talk_listener()).start()
 
         from sentry.vision import MOTION_FRACTION, Motion, person_confidence
         words = None
@@ -274,6 +290,7 @@ class Duck:
         def on_presence(ev, distance, reason=None):
             nonlocal umotion, slouches
             now = time.monotonic()
+            self.at_desk = ev == "arrive"
             value = {"present": ev == "arrive", "distance_cm": None if distance is None else round(distance)}
             if reason:
                 value["reason"] = reason
@@ -405,6 +422,7 @@ def main():
     ap.add_argument("--fps", type=float, default=10, help="frames analysed per second at the desk")
     ap.add_argument("--no-mic", action="store_true", help="turn off sound alerts")
     ap.add_argument("--no-sign", action="store_true", help="turn off Sign to Duck")
+    ap.add_argument("--no-talk", action="store_true", help='turn off "hey duck" (memory locker)')
     ap.add_argument("--preview", action="store_true", help="live annotated view at http://<pi-ip>:8090/?k=<key> (dev only; key printed at start)")
     ap.add_argument("--preview-port", type=int, default=8090)
     ap.add_argument("--pose-model", default=str(PI / "posture" / "pose_landmarker_lite.task"))

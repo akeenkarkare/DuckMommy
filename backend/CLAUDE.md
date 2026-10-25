@@ -1,6 +1,6 @@
 # Backend — context
 
-A Node process that runs alongside the Next.js app and works as a **live relay** between the duck and the dashboard. Events are **not stored**. Root rules in `/CLAUDE.md` apply (per-user isolation, no secrets in git, ask before deps).
+A Node process that runs alongside the Next.js app and works as a **live relay** between the duck and the dashboard. Events are **not stored** (the one exception: the memory locker's `memories` table). Root rules in `/CLAUDE.md` apply (per-user isolation, no secrets in git, ask before deps).
 
 ## Stack
 - **Node process** (WebSocket server) connected to the **Next.js** dashboard app
@@ -38,6 +38,7 @@ Pi  <==WS (DUCK_TOKEN)==>    Node relay  <==WS (Supabase session)==>  Dashboard 
 ## Tables — see `supabase/schema.sql` (draft, under review)
 - `profiles`: display name, created on register
 - `settings`: volume, TTS messages, posture severity/delay (placeholder), sentry/quack toggles, created on register
+- `memories`: things the user told the duck to remember (`text` = Claude's cleaned sentence, `heard` = raw transcript, `source`). The relay inserts; the dashboard reads/deletes its own rows (RLS).
 - RLS on every table: `user_id = auth.uid()`
 
 ## Event shape
@@ -53,6 +54,7 @@ The first message on any socket is auth. Otherwise the socket is closed (4001 = 
 - Dashboard → relay: `{type:"auth", role:"dashboard", access_token}`, `{type:"settings_changed"}`, `{type:"command", command}`, `{type:"agenda_refresh"}`. Coach command names: `start_focus`, `break`, `finish`, `time_left`, `more_time`.
 - Relay → dashboard: `{type:"auth_ok", user_id}`, `{type:"buffer", events}`, `{type:"event", event}`, `{type:"status", duck_connected, with_you}`, `{type:"command_ack", ok}`, `{type:"agenda", items, errors, feeds, fetched_at}` (that user's own calendars only; errors name the host, never the secret link)
 - Fake `value` payloads (until the real sensors exist): posture `{state:"slouch"|"upright", neck_angle_deg, slouch_duration_s}`, pat `{touch_ms}`, presence `{present, distance_cm}`, sentry `{distance_cm, person_confirmed, confidence, night, trigger}` (real code: `pi/sentry/watch.py`), focus `{source:"nfc", action:"tap"}`, sign `{text, signs, commands}` (`pi/asl`), sound `{kind: doorbell|phone|alarm|notification|calling, label, score}` (`pi/sounds/alerts.py`), coach `{kind: arrival|deadline|event|checkin|idle|focus_start|focus_done|break_start|break_over|finish|more_time|time_left, text, source: ai|template, item, focus_minutes_left}` (`pi/coach`). presence may carry `reason: "idle"` (no movement for 10 min).
+- **Voice / memory locker:** `POST /voice` with `Authorization: Bearer DUCK_TOKEN`, body `audio/wav` (or `application/json {text}` for testing). The relay transcribes with ElevenLabs Scribe, Claude (`MEMORY_MODEL`, default `ANTHROPIC_MODEL`, code in `src/memory.js`) decides remember / recall / other and cleans up the words, then it saves to or searches the active user's `memories`. Returns `{ say, intent, heard, memory? }`; the duck speaks `say`. Also emits a `memory` event `{action: saved|recall, ...}` to the dashboard.
 - **TTS proxy:** `POST /tts {text}` with `Authorization: Bearer DUCK_TOKEN` returns raw 16-bit mono PCM @ 22050 Hz from ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, optional `ELEVENLABS_MODEL_ID` in `.env`). `/health` shows `tts: true` once configured. `npm run make-quack` makes `assets/quack.wav`.
 - **Coach lines:** `POST /nudge {kind, tone, facts}` with `Authorization: Bearer DUCK_TOKEN` returns `{text}` from Claude (`ANTHROPIC_API_KEY`, optional `ANTHROPIC_MODEL` default `claude-haiku-5-5`, optional `ANTHROPIC_BASE_URL`). 503 when not configured, so the Pi uses its templates. Prompt: `src/nudge.js`. `/health` shows `coach_ai: true` once configured.
 - **Live view (camera):** dashboard → relay `{type:"video", on}`; relay → dashboard `{type:"video_status", streaming, reason, fps}`; relay → duck `{type:"video", on, fps}` only while at least one watcher exists; duck → relay **binary** WS messages = one JPEG each, forwarded only to the active user's watching dashboards (any logged-in user by default; `VIDEO_VIEWERS` = comma list of emails restricts it, `off` disables it). Frames are dropped for a watcher more than 1 MB behind and are never stored or buffered. `VIDEO_FPS` (1-15, default 6). `/health` shows `live_view`, `watching`.
@@ -87,6 +89,7 @@ None right now.
 - 2026-10-23: The active user is whoever most recently logged in or opened the dashboard (no claim button).
 - 2026-10-24: Live camera view on the dashboard (Akeen asked; exception to root rule 5). Allowlisted accounts only, opt-in per viewing, relay-forwarded, never stored.
 - 2026-10-24: Lock-in coach + calendar (Akeen asked for it, Tomo-style). Claude writes the lines via `/nudge` (key on the laptop), templates as fallback. Calendar = iCal feed links parsed in-house (no new dependency); Google sign-in maybe later. New settings columns in `migrations/003_coach_and_calendar.sql`.
+- 2026-10-25: Memory locker ("Nest"). sara asked for it. `memories` table stores only Claude's cleaned-up sentence (no audio, no raw transcript), RLS per user, deletable from the dashboard. Speech goes to ElevenLabs (STT) and Claude via `/voice`.
 
 ## Google Calendar (via Auth0)
 The Calendar tab's **Connect Google Calendar** goes through Auth0's Google login. The relay then reads **every calendar in the user's Google list** (titles and times only, the next 7 days) into the same agenda as the iCal links.
