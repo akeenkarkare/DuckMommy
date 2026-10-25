@@ -29,7 +29,9 @@ RELAY_PORT="$(sed -nE 's/^RELAY_PORT=([0-9]+).*/\1/p' backend/.env | tail -1 || 
 for f in dashboard/.env.local dashboard/.env; do
   [[ -f "$f" ]] || continue
   url="$(sed -nE 's/^NEXT_PUBLIC_RELAY_URL=(.*)/\1/p' "$f" | tail -1)"
-  if [[ -n "$url" && "$url" != *":$RELAY_PORT"* ]]; then
+  # Only a URL with an explicit port must match (wss://your.domain/relay behind Caddy has none).
+  port_in_url="$(sed -nE 's|^wss?://[^/:]+:([0-9]+).*|\1|p' <<<"$url")"
+  if [[ -n "$port_in_url" && "$port_in_url" != "$RELAY_PORT" ]]; then
     die "$f has NEXT_PUBLIC_RELAY_URL=$url but the relay runs on port $RELAY_PORT (backend/.env). Make them match."
   fi
 done
