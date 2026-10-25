@@ -546,7 +546,7 @@ a.btn { color: inherit; text-decoration: none; }
 .sec-nest { --tint: var(--tint-peach); }
 /* no white wash: hero/end text sits straight on the scene, light with a soft shadow */
 .sec-hero .col, .sec-end .col { --ink: #fffaf0; color: #fffaf0; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55); }
-.sec-hero .mega, .sec-end .mega, .sec-hero .lede, .sec-end .lede, .sec-hero .text-link, .sec-end .text-link { color: #fffaf0; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55); }
+.sec-hero .mega, .sec-end .mega, .sec-hero .lede, .sec-end .lede, .sec-hero .text-link, .sec-end .text-link { color: #fffaf0 !important; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55); }
 .sec-hero .col, .sec-end .col { position: relative; }
 .mega { color: var(--ink); text-shadow: none; }
 .mega .yellow { color: #d9580f; }
