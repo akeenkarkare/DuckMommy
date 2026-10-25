@@ -51,7 +51,8 @@ const VIDEO_VIEWERS = (process.env.VIDEO_VIEWERS || '*').split(',').map((s) => s
 const VIDEO_FPS = Math.max(1, Math.min(15, Number(process.env.VIDEO_FPS) || 6));
 const VIDEO_MAX_BUFFER = 1024 * 1024;   // a watcher this far behind skips frames
 const videoAllowed = (email) => VIDEO_VIEWERS.includes('*') || (!!email && VIDEO_VIEWERS.includes(email.toLowerCase()));
-const AGENDA_REFRESH_MS = 10 * 60 * 1000;
+const AGENDA_REFRESH_MS = 10 * 60 * 1000;   // iCal feeds
+const GOOGLE_REFRESH_MS = 60 * 1000;        // Google Calendar (and the timer that drives both)
 
 // Google Calendar through Auth0 (see google.js + backend/CLAUDE.md for the setup).
 const GOOGLE_ENV = {
@@ -180,26 +181,34 @@ async function refreshAgenda(userId, urlsText, { force = false } = {}) {
   const urls = feedUrls(urlsText).join('\n');
   const key = urls + (link ? `\ngoogle:${link.sub}` : '');
   const cached = agendas.get(userId);
-  if (!force && cached && cached.key === key && Date.now() - cached.fetched_at < AGENDA_REFRESH_MS) {
+  const maxAge = link ? GOOGLE_REFRESH_MS : AGENDA_REFRESH_MS;   // Google is cheap to ask; new events show within a minute
+  if (!force && cached && cached.key === key && Date.now() - cached.fetched_at < maxAge) {
     return sendAgenda(userId);
   }
   if (refreshing.has(userId)) return;
   refreshing.add(userId);
   try {
-    const agenda = urls ? await buildAgenda(urls) : { items: [], errors: [], feeds: 0, fetched_at: Date.now() };
+    // iCal feeds are slow and change rarely: reuse them for AGENDA_REFRESH_MS unless forced by the user.
+    let ics = cached?.urls === urls && Date.now() - cached.ics.fetched_at < AGENDA_REFRESH_MS && force !== 'all'
+      ? cached.ics : null;
+    if (!ics) ics = urls ? await buildAgenda(urls) : { items: [], errors: [], feeds: 0, fetched_at: Date.now() };
+    const agenda = { ...ics, items: [...ics.items], errors: [...ics.errors], fetched_at: Date.now() };
     agenda.google = { available: googleConfigured(GOOGLE_ENV), connected: !!link, email: link?.email ?? null };
     if (link) {   // Google Calendar (via Auth0) joins the iCal feeds in one agenda
       try {
         const g = await fetchGoogleEvents(GOOGLE_ENV, link.sub);
         agenda.items = [...agenda.items, ...g.items].sort((a, b) => a.start - b.start).slice(0, 120);
         agenda.google.calendars = g.calendars;
-        if (g.failed) agenda.errors.push(`Google Calendar: ${g.failed} calendar(s) couldn't be read`);
+        for (const e of g.errors ?? []) {
+          log('google calendar read failed', e);
+          agenda.errors.push(`Google Calendar · ${e.slice(0, 200)}`);
+        }
       } catch (e) {
         log('google calendar failed', e.message);
         agenda.errors.push(`Google Calendar: ${e.message}`);
       }
     }
-    agendas.set(userId, { key, ...agenda });
+    agendas.set(userId, { key, urls, ics, ...agenda });
     if (key) log(`agenda for ${userId}: ${agenda.items.length} items from ${agenda.feeds} feed(s)${agenda.errors.length ? `, ${agenda.errors.length} error(s)` : ''}`);
     sendAgenda(userId);
   } finally {
@@ -209,7 +218,7 @@ async function refreshAgenda(userId, urlsText, { force = false } = {}) {
 
 setInterval(() => {
   if (activeUserId && activeSettings) refreshAgenda(activeUserId, activeSettings.calendar_urls, { force: true });
-}, AGENDA_REFRESH_MS);
+}, GOOGLE_REFRESH_MS);
 
 // Backup path: dashboard writes settings to Supabase, Realtime tells us.
 supabase
@@ -317,7 +326,7 @@ function handleDashboard(ws, msg) {
 
   if (msg.type === 'agenda_refresh') {   // "refresh" button: re-read this user's own links
     supabase.from('settings').select('calendar_urls').eq('user_id', ws.userId).single()
-      .then(({ data }) => refreshAgenda(ws.userId, data?.calendar_urls, { force: true }));
+      .then(({ data }) => refreshAgenda(ws.userId, data?.calendar_urls, { force: 'all' }));
     return;
   }
 

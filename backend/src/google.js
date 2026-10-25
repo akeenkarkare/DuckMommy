@@ -156,7 +156,7 @@ export function toItem(ev, calendarId, tz = localTimeZone()) {
 
 /** Every calendar in the user's Google list -> agenda items for the next week. */
 export async function fetchGoogleEvents(env, sub, { now = Date.now(), fetchImpl = fetch, tz = localTimeZone() } = {}) {
-  const list = await calendarGet(env, sub, '/users/me/calendarList?minAccessRole=reader&fields=items(id,selected,primary)', fetchImpl);
+  const list = await calendarGet(env, sub, '/users/me/calendarList?minAccessRole=reader&fields=items(id,summary,selected,primary)', fetchImpl);
   const calendars = (list.items ?? []).filter((c) => c.selected || c.primary).slice(0, MAX_CALENDARS);
   const range = new URLSearchParams({
     singleEvents: 'true', orderBy: 'startTime', maxResults: String(MAX_PER_CALENDAR),
@@ -167,9 +167,10 @@ export async function fetchGoogleEvents(env, sub, { now = Date.now(), fetchImpl 
     calendarGet(env, sub, `/calendars/${encodeURIComponent(c.id)}/events?${range}`, fetchImpl)
       .then((page) => (page.items ?? []).map((ev) => toItem(ev, c.id, tz)).filter(Boolean))));
   const items = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
-  const failed = results.filter((r) => r.status === 'rejected').length;
+  const errors = results.flatMap((r, i) => (r.status === 'rejected'
+    ? [`${calendars[i].summary || calendars[i].id}: ${r.reason?.message ?? r.reason}`] : []));
   items.sort((a, b) => a.start - b.start);
-  return { items, calendars: calendars.length, failed };
+  return { items, calendars: calendars.length, failed: errors.length, errors };
 }
 
 /** For tests: forget cached tokens. */
