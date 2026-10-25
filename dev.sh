@@ -35,10 +35,12 @@ for f in dashboard/.env.local dashboard/.env; do
     die "$f has NEXT_PUBLIC_RELAY_URL=$url but the relay runs on port $RELAY_PORT (backend/.env). Make them match."
   fi
 done
+# Who is listening on a port. `ss` first: on some servers lsof misses a dual-stack *:3000 listener.
+listeners() { { ss -ltnpH "sport = :$1" 2>/dev/null || lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | tail -n +2; } | grep .; }
 for port in "$RELAY_PORT" 3000; do
-  if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-    lsof -nP -iTCP:"$port" -sTCP:LISTEN | tail -n +2 >&2
-    die "Port $port is already in use (above). If it's an old relay/dashboard (node): kill \$(lsof -t -iTCP:$port -sTCP:LISTEN). Otherwise pick another RELAY_PORT in backend/.env (and the matching NEXT_PUBLIC_RELAY_URL)."
+  if out="$(listeners "$port")"; then
+    echo "$out" >&2
+    die "Port $port is already in use (above). An old relay/dashboard (node / next-server)? Run ./stop.sh (or kill -9 the pid). Otherwise pick another RELAY_PORT in backend/.env (and the matching NEXT_PUBLIC_RELAY_URL)."
   fi
 done
 
