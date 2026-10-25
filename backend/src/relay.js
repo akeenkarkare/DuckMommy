@@ -52,9 +52,10 @@ const GOOGLE_ENV = {
   AUTH0_DOMAIN: process.env.AUTH0_DOMAIN, AUTH0_CLIENT_ID: process.env.AUTH0_CLIENT_ID,
   AUTH0_CLIENT_SECRET: process.env.AUTH0_CLIENT_SECRET, GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
-  RELAY_PUBLIC_URL: process.env.RELAY_PUBLIC_URL || `http://192.168.1.67:${process.env.RELAY_PORT ?? 8080}`,
+  // Where browsers reach this relay / the dashboard (the Google callback goes here). Set both on a server.
+  RELAY_PUBLIC_URL: process.env.RELAY_PUBLIC_URL || `http://localhost:${process.env.RELAY_PORT ?? 8080}`,
 };
-const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'http://192.168.1.67:3000').replace(/\/$/, '');
+const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'http://localhost:3000').replace(/\/$/, '');
 const CONNECT_STATE_MS = 10 * 60 * 1000;
 const REMINDER_TICK_MS = 10 * 1000;
 
