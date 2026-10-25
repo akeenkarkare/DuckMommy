@@ -33,7 +33,8 @@ A desk-companion duck for focus and posture. A Raspberry Pi inside the duck watc
 7. **Sign to Duck.** The user signs ASL word signs at the camera; the duck speaks the phrase (MediaPipe Holistic + DTW templates, no API) and logs a `sign` event. Code: `pi/asl`.
 8. **Sound alerts.** The mic hears a doorbell, phone, alarm, notification or someone calling, flashes the LED in a pattern per sound, and logs a `sound` event.
 9. **Lock-in coach (Tomo-style).** Persuasive spoken nudges: an arrival brief of what's due, deadline reminders (24 h / 3 h / 1 h / 15 min), event heads-ups, periodic check-ins, a "zoned out?" nudge after 5 min with no movement (then marked away after 5 more), and focus sessions from the START FOCUS sign or the dashboard. Logs `coach` events. Code: `pi/coach`, `pi/motion`.
-10. **Calendar.** iCal feed links (Google Calendar secret address, Brightspace/Canvas) pasted on the dashboard; the relay fetches and parses them (`backend/src/ics.js`, no deps) and pushes the next week to the duck. The links never reach the Pi. Google sign-in is a possible later addition.
+10. **Talk to the duck** ("hey duck, …", Sara's memory locker + voice commands): remember / recall notes, "remind me in 5 days to…" (spoken when due), "what's on my calendar tomorrow?", "let's lock in". Replies in the ElevenLabs voice. Code: `pi/memory`, `backend/src/memory.js`.
+11. **Calendar.** iCal feed links (Google Calendar secret address, Brightspace/Canvas) pasted on the dashboard; the relay fetches and parses them (`backend/src/ics.js`, no deps) and pushes the next week to the duck. The links never reach the Pi. Google sign-in is a possible later addition.
 
 **Out of scope until 1–5 work:**
 - LLM object analysis ("show the duck a tool and ask what it does"). It needs an always-on API plus clip capture. If you build it later, make it on-demand only: a trigger captures a 5-second clip, which goes to the API.
@@ -74,7 +75,7 @@ Each folder may get its own short CLAUDE.md with run/test commands. Keep this ro
 - Camera preview (dev only): laptop `pi/camera/view.sh`, then Pi `pi/camera/stream.sh <laptop-ip>`. See `pi/camera/README.md`.
 - **Website (relay + dashboard together): `./dev.sh`** → http://localhost:3000 · `./dev.sh --fake-duck` adds the simulated duck (no Pi needed) · **on a server use `./dev.sh --prod`** (Next 16 dev mode won't hydrate for browsers opening it by IP/hostname)
 - Backend: `cd backend && npm run dev` · tests: `npm test`
-- Supabase: run `backend/supabase/migrations/003_coach_and_calendar.sql` once for the coach + calendar settings.
+- Supabase: run each `backend/supabase/migrations/*.sql` once (003 coach + calendar, 004 Google Calendar, 004 memories, 005 voice reminders).
 - Camera won't start: `cd pi && ./doctor.sh`
 - Dashboard: `cd dashboard && npm run dev` → http://localhost:3000
 

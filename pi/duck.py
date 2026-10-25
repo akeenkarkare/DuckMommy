@@ -191,7 +191,8 @@ class Duck:
         talk = TalkToDuck(WakeWord(), self.voice, self.voice_url, self.env.get("DUCK_TOKEN"),
                           on_listening=lambda on: self.led.show("listening" if on else "heard"),
                           present=lambda: self.at_desk)
-        log('talk to duck: say "hey duck, remember ..." or "hey duck, what did I tell you ...?"')
+        log('talk to duck: "hey duck, remember ...", "what did I tell you ...?", "remind me in 5 days to ...", '
+            '"what\'s on my calendar?", "let\'s lock in"')
         return talk.threaded()
 
     def on_sound(self, now: float, categories):

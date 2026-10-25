@@ -29,7 +29,12 @@ function describe({ type, value: v }) {
     case 'sign': return `Signed: “${v.text}”`;
     case 'calendar': return `🔔 ${v.text}`;
     case 'sound': return `${SOUND_LABELS[v.kind] ?? v.label} · ${Math.round(v.score * 100)}% sure · LED on`;
-    case 'memory': return v.action === 'saved' ? 'Saved a note to your nest' : 'Answered a question from your notes';
+    case 'memory':
+      if (v.action === 'saved') return 'Saved a note to your nest';
+      if (v.action === 'reminder_set') return `Reminder set: ${v.text} · ${new Date(v.due_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`;
+      if (v.action === 'reminder_due') return `Reminded you: ${v.text}${v.late ? ' (you were away)' : ''}`;
+      if (v.action === 'agenda') return `Answered: “${v.question}”`;
+      return 'Answered a question from your notes';
     case 'coach': return `🦆 “${v.text}”${v.source === 'template' ? ' · offline line' : ''}`;
     default: return JSON.stringify(v);
   }

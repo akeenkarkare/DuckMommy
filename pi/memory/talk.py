@@ -1,4 +1,5 @@
-"""Talk to the duck: "hey duck, remember ..." / "hey duck, what did I tell you ...?"
+"""Talk to the duck: "hey duck, remember ..." / "what did I tell you ...?" / "remind me in 5 days to ..." /
+"what's on my calendar tomorrow?" / "let's lock in" (the relay works out which; see backend/src/memory.js)
 
 Runs on the mic thread. Every audio chunk from sounds/listener.py comes through feed():
 
@@ -129,7 +130,8 @@ class TalkToDuck:
         try:
             reply = self.post(self.voice_url, self.token, to_wav(pcm))
             log(f'heard "{reply.get("heard", "")}" -> {reply.get("intent")}')
-            self.voice.say(reply.get("say") or "Sorry, I didn't catch that.")
+            if not reply.get("quiet"):   # quiet: the duck answers another way (e.g. the focus coach speaks)
+                self.voice.say(reply.get("say") or "Sorry, I didn't catch that.")
         except Exception as e:   # relay down, offline, timeout
             log(f"voice request failed: {e}")
             self.voice.say("My brain is offline right now, try again in a bit.")
