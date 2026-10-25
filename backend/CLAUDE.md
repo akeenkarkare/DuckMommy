@@ -94,6 +94,7 @@ None right now.
 - 2026-10-23: The active user is whoever most recently logged in or opened the dashboard (no claim button).
 - 2026-10-24: Live camera view on the dashboard (Akeen asked; exception to root rule 5). Allowlisted accounts only, opt-in per viewing, relay-forwarded, never stored.
 - 2026-10-24: Lock-in coach + calendar (Akeen asked for it, Tomo-style). Claude writes the lines via `/nudge` (key on the laptop), templates as fallback. Calendar = iCal feed links parsed in-house (no new dependency); Google sign-in maybe later. New settings columns in `migrations/003_coach_and_calendar.sql`.
+- 2026-10-25: The duck talks Gen Z (Akeen asked): `GENZ_STYLE` in `src/nudge.js` goes into every Claude prompt the duck speaks from (coach, recall, calendar); fixed lines and the Pi templates are rewritten to match.
 - 2026-10-25: Voice reminders + calendar/focus by voice (Akeen asked): `remind` / `agenda` / `focus` intents on `/voice`, `reminders` table (migration 005), delivered by the relay when due and you're at the desk.
 - 2026-10-25: Memory locker ("Nest"). sara asked for it. `memories` table stores only Claude's cleaned-up sentence (no audio, no raw transcript), RLS per user, deletable from the dashboard. Speech goes to ElevenLabs (STT) and Claude via `/voice`.
 

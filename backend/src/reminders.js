@@ -1,5 +1,5 @@
 // Spoken calendar reminders for timed events: once 5 minutes before, once when it starts.
-// Plain sentences (no AI). The relay calls these every few seconds for the duck's active user.
+// Plain sentences (no AI), Gen Z voice. The relay calls these every few seconds for the duck's active user.
 
 export const LEAD_MS = 5 * 60 * 1000;
 const START_GRACE_MS = 2 * 60 * 1000;   // relay was down at start time? still say it within 2 min
@@ -18,10 +18,10 @@ export function dueReminders(items, now, fired) {
     const soon = `${i.id}@${i.start}:soon`, start = `${i.id}@${i.start}:now`;
     if (left > 0 && left <= LEAD_MS && !fired.has(soon)) {
       fired.add(soon);
-      out.push({ key: soon, when: 'soon', title: i.title, start: i.start, text: `In 5 minutes: ${clean(i.title)}.` });
+      out.push({ key: soon, when: 'soon', title: i.title, start: i.start, text: `Heads up, ${clean(i.title)} starts in 5 minutes. Wrap it up.` });
     } else if (left <= 0 && left > -START_GRACE_MS && !fired.has(start)) {
       fired.add(start).add(soon);   // don't say "in 5 minutes" after it has started
-      out.push({ key: start, when: 'now', title: i.title, start: i.start, text: `${clean(i.title)} is starting now.` });
+      out.push({ key: start, when: 'now', title: i.title, start: i.start, text: `${clean(i.title)} is starting now. Don't be late, it's not the vibe.` });
     }
   }
   return out;
@@ -34,7 +34,7 @@ export function daySummary(items, now, { tz, maxLen = 200 } = {}) {
   const today = fmtDay.format(now);
   const left = (items ?? []).filter((i) => fmtDay.format(i.all_day ? i.start + 12 * 3600e3 : i.start) === today
     && (i.end ?? i.start) >= now);
-  if (!left.length) return ['Nothing else on your calendar today.'];
+  if (!left.length) return ["Nothing else on your calendar today. You're free, bestie."];
   const lines = [`You have ${left.length} thing${left.length > 1 ? 's' : ''} left today.`];
   for (const i of left) {
     const when = i.all_day ? 'All day' : `At ${fmtTime.format(i.start)}`;

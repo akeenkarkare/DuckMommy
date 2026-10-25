@@ -542,7 +542,7 @@ async function handleVoice(req, res) {
         .eq('user_id', userId).order('created_at', { ascending: false }).limit(MEMORY_RECALL_LIMIT);
       if (error) {
         log('memory load failed', error.message);
-        return voiceReply(res, 200, { intent: 'recall', heard, say: "Sorry, I can't reach my notes right now." });
+        return voiceReply(res, 200, { intent: 'recall', heard, say: "Not gonna lie, I can't reach my notes right now." });
       }
       const question = meant.question || heard;
       const answer = await answerRecall({
@@ -551,22 +551,22 @@ async function handleVoice(req, res) {
       });
       if (userId === activeUserId) emitToActive('memory', { action: 'recall', question, answer });
       log('memory recall answered');
-      return voiceReply(res, 200, { intent: 'recall', heard, say: answer || "I don't have a note about that." });
+      return voiceReply(res, 200, { intent: 'recall', heard, say: answer || "I don't have a note about that, bestie. Did you actually tell me?" });
     }
 
     if (meant.intent === 'remind') {
-      if (!meant.reminder) return voiceReply(res, 200, { intent: 'remind', heard, say: 'What should I remind you about?' });
+      if (!meant.reminder) return voiceReply(res, 200, { intent: 'remind', heard, say: 'Remind you about what, bestie?' });
       const due = parseRemindAt(meant.remind_at, MEMORY_TZ, now);
-      if (!due) return voiceReply(res, 200, { intent: 'remind', heard, say: 'When should I remind you? Try, hey duck, remind me tomorrow at 9 to call mom.' });
+      if (!due) return voiceReply(res, 200, { intent: 'remind', heard, say: 'Okay but when? Try, hey duck, remind me tomorrow at 9 to call mom.' });
       const { error } = await supabase.from('reminders')
         .insert({ user_id: userId, text: meant.reminder, due_at: new Date(due).toISOString(), source: 'voice' });
       if (error) {
         log('reminder save failed (run migration 005?):', error.message);
-        return voiceReply(res, 200, { intent: 'remind', heard, say: "Sorry, I couldn't set that reminder." });
+        return voiceReply(res, 200, { intent: 'remind', heard, say: "That reminder did not go through, that's an L. Try again?" });
       }
       if (userId === activeUserId) emitToActive('memory', { action: 'reminder_set', text: meant.reminder, due_at: due });
       log('reminder set for', new Date(due).toISOString());
-      return voiceReply(res, 200, { intent: 'remind', heard, say: `Okay, I'll remind you ${friendlyWhen(due, now, MEMORY_TZ)} to ${meant.reminder}.` });
+      return voiceReply(res, 200, { intent: 'remind', heard, say: `Bet. I'll remind you ${friendlyWhen(due, now, MEMORY_TZ)} to ${meant.reminder}. No cap.` });
     }
 
     if (meant.intent === 'agenda') {
@@ -579,20 +579,20 @@ async function handleVoice(req, res) {
       });
       if (userId === activeUserId) emitToActive('memory', { action: 'agenda', question, answer });
       log('agenda question answered');
-      return voiceReply(res, 200, { intent: 'agenda', heard, say: answer || "I don't see anything on your calendar for that." });
+      return voiceReply(res, 200, { intent: 'agenda', heard, say: answer || "Nothing on your calendar for that. You're free, bestie." });
     }
 
     if (meant.intent === 'focus') {   // the duck's own coach answers ("Locking in for 25...")
-      if (userId !== activeUserId || !duck) return voiceReply(res, 200, { intent: 'focus', heard, say: "I can't reach my focus timer right now." });
+      if (userId !== activeUserId || !duck) return voiceReply(res, 200, { intent: 'focus', heard, say: "My focus timer is ghosting me right now. Try again in a sec." });
       send(duck, { type: 'command', command: { type: 'coach', name: meant.focus } });
       log('voice focus command', meant.focus);
       return voiceReply(res, 200, { intent: 'focus', heard, focus: meant.focus, say: '', quiet: true });
     }
 
-    return voiceReply(res, 200, { intent: 'other', heard, say: "Sorry, I didn't catch that. You can say remember, remind me, or ask what's on your calendar." });
+    return voiceReply(res, 200, { intent: 'other', heard, say: "Wait, what? Say that again. You can say remember, remind me, or ask what's on your calendar." });
   } catch (e) {
     log('voice failed', e.message);
-    return voiceReply(res, e.name === 'TimeoutError' ? 504 : 502, { intent: 'error', heard: '', say: 'My brain is offline right now, try again in a bit.' });
+    return voiceReply(res, e.name === 'TimeoutError' ? 504 : 502, { intent: 'error', heard: '', say: 'My brain is buffering. Try again in a sec.' });
   }
 
 }
@@ -617,9 +617,9 @@ setInterval(async () => {
       const { data: claimed } = await supabase.from('reminders').update({ delivered_at: new Date().toISOString() })
         .eq('id', r.id).is('delivered_at', null).select('id');
       if (!claimed?.length || userId !== activeUserId || !duck) continue;
-      const hey = name ? `Hey ${String(name).split(/\s+/)[0]}, ` : 'Hey, ';
+      const hey = name ? `Yo ${String(name).split(/\s+/)[0]}, ` : 'Yo bestie, ';
       const late = now - Date.parse(r.due_at) > LATE_REMINDER_MS;
-      const text = late ? `${hey}earlier you asked me to remind you to ${r.text}.` : `${hey}time to ${r.text}.`;
+      const text = late ? `${hey}you told me to remind you to ${r.text}. I'm just the messenger.` : `${hey}it's time to ${r.text}. No excuses.`;
       send(duck, { type: 'command', command: { type: 'say', text } });
       emitToActive('memory', { action: 'reminder_due', text: r.text, due_at: Date.parse(r.due_at), late });
       log('voice reminder delivered', late ? '(late)' : '');

@@ -121,7 +121,7 @@ class TalkToDuck:
     def _send(self, pcm: bytes):
         if not self.voice_url or not self.token:
             log("RELAY_URL/DUCK_TOKEN missing: can't reach the memory locker")
-            self.voice.say("I can't reach my notes right now.")
+            self.voice.say("Not gonna lie, I can't reach my notes right now.")
             return
         self.sending = True
         threading.Thread(target=self._send_worker, args=(pcm,), daemon=True, name="talk").start()
@@ -134,7 +134,7 @@ class TalkToDuck:
                 self.voice.say(reply.get("say") or "Sorry, I didn't catch that.")
         except Exception as e:   # relay down, offline, timeout
             log(f"voice request failed: {e}")
-            self.voice.say("My brain is offline right now, try again in a bit.")
+            self.voice.say("My brain is buffering. Try again in a sec.")
         finally:
             self._wait_until_quiet()
             self.sending = False
