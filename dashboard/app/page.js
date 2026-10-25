@@ -50,7 +50,7 @@ export default function Dashboard() {
     if (e.type === 'coach' && e.value?.text) return bridge.current.react({ type: 'say', value: { text: e.value.text } });
     if (e.type === 'memory') {
       const v = e.value ?? {};
-      const text = v.action === 'recall' || v.action === 'agenda' || v.action === 'weather' ? v.answer
+      const text = v.action === 'recall' || v.action === 'agenda' || v.action === 'lookup' ? v.answer
         : v.action === 'reminder_set' ? `⏰ ${v.text}` : v.action === 'reminder_due' ? `⏰ Time to ${v.text}` : 'Saved to your nest';
       return bridge.current.react({ type: 'say', value: { text } });
     }

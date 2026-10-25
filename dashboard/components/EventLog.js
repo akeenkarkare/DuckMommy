@@ -33,7 +33,7 @@ function describe({ type, value: v }) {
       if (v.action === 'saved') return 'Saved a note to your nest';
       if (v.action === 'reminder_set') return `Reminder set: ${v.text} · ${new Date(v.due_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`;
       if (v.action === 'reminder_due') return `Reminded you: ${v.text}${v.late ? ' (you were away)' : ''}`;
-      if (v.action === 'agenda' || v.action === 'weather') return `Answered: “${v.question}”`;
+      if (v.action === 'agenda' || v.action === 'lookup') return `Answered: “${v.question}”`;
       return 'Answered a question from your notes';
     case 'coach': return `🦆 “${v.text}”${v.source === 'template' ? ' · offline line' : ''}`;
     default: return JSON.stringify(v);

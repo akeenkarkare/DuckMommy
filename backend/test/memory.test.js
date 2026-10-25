@@ -1,7 +1,7 @@
 // Run: cd backend && npm test   (node's built-in test runner, no deps)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { answerAgenda, answerRecall, buildAgendaPrompt, buildRecallPrompt, buildUnderstandPrompt, cleanText, friendlyWhen, localTime, parseRemindAt, transcribe, understand } from '../src/memory.js';
+import { answerAgenda, answerLookup, answerRecall, buildAgendaPrompt, buildRecallPrompt, buildUnderstandPrompt, cleanText, friendlyWhen, localTime, parseRemindAt, transcribe, understand } from '../src/memory.js';
 
 const NY = 'America/New_York';
 let last;
@@ -13,7 +13,7 @@ const claudeReply = (text, extra = {}) => async (url, init) => {
 test('understand: garbled remember -> clean sentence, sends the structured-output schema', async () => {
   const fetchImpl = claudeReply(JSON.stringify({ intent: 'remember', memory: 'My keys are in the blue drawer.', question: '' }));
   const out = await understand({ apiKey: 'k', model: 'claude-opus-5-5', transcript: 'um remember like my keys r in the blew draw', fetchImpl });
-  assert.deepEqual(out, { intent: 'remember', memory: 'My keys are in the blue drawer.', question: '', reminder: '', remind_at: '', focus: '', sentry: '', place: '', reply: '' });
+  assert.deepEqual(out, { intent: 'remember', memory: 'My keys are in the blue drawer.', question: '', reminder: '', remind_at: '', focus: '', sentry: '', reply: '' });
   assert.equal(last.body.model, 'claude-opus-5-5');
   assert.equal(last.body.max_tokens, 4096);
   assert.equal(last.body.output_config.format.type, 'json_schema');
@@ -89,7 +89,7 @@ test('understand: remind intent, prompt carries the current local time', async (
   assert.equal(out.remind_at, '2026-10-29T19:00');
   assert.match(last.body.system, /Saturday, October 24, 2026(,| at) 7:00 PM/);
   assert.match(last.body.system, /YYYY-MM-DDTHH:MM/);
-  assert.deepEqual(last.body.output_config.format.schema.properties.intent.enum, ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'weather', 'other']);
+  assert.deepEqual(last.body.output_config.format.schema.properties.intent.enum, ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'lookup', 'other']);
 });
 
 test('understand: focus needs a known command, else other', async () => {
@@ -168,9 +168,42 @@ test('understand: sentry on/off, anything else is other', async () => {
   assert.equal(out.intent, 'other');
 });
 
-test('understand: weather keeps the place; the reply prompt knows the time', async () => {
-  const out = await understand({ apiKey: 'k', model: 'm', transcript: "what's the weather in boston tomorrow", now: SAT_7PM, tz: NY,
-    fetchImpl: claudeReply('{"intent":"weather","memory":"","question":"What is the weather in Boston tomorrow?","reminder":"","remind_at":"","focus":"","sentry":"","place":"Boston","reply":""}') });
-  assert.deepEqual([out.intent, out.place, out.question], ['weather', 'Boston', 'What is the weather in Boston tomorrow?']);
+test('understand: lookup questions; the reply prompt knows the time', async () => {
+  const out = await understand({ apiKey: 'k', model: 'm', transcript: "what's the weather tomorrow", now: SAT_7PM, tz: NY,
+    fetchImpl: claudeReply('{"intent":"lookup","memory":"","question":"What is the weather tomorrow?","reminder":"","remind_at":"","focus":"","sentry":"","reply":""}') });
+  assert.deepEqual([out.intent, out.question], ['lookup', 'What is the weather tomorrow?']);
   assert.match(last.body.system, /current date and time \(it is Saturday, October 24, 2026/);
+});
+
+test('answerLookup: sends the web search tool + location, speaks the text after the results', async () => {
+  const fetchImpl = claudeReply('', {
+    content: [
+      { type: 'text', text: "I'll search for that." },
+      { type: 'server_tool_use', id: 's1', name: 'web_search', input: { query: 'stony brook weather tomorrow' } },
+      { type: 'web_search_tool_result', tool_use_id: 's1', content: [] },
+      { type: 'text', text: 'Tomorrow is giving rain, high of 55. ', citations: [] },
+      { type: 'text', text: 'Grab an umbrella, bestie.' },
+    ],
+  });
+  const text = await answerLookup({ apiKey: 'k', model: 'm', question: 'What is the weather tomorrow?', now: SAT_7PM, tz: NY,
+    place: 'Stony Brook, New York', location: { city: 'Stony Brook', country: 'US' }, fetchImpl });
+  assert.equal(text, 'Tomorrow is giving rain, high of 55. Grab an umbrella, bestie.');
+  assert.deepEqual(last.body.tools[0], { type: 'web_search_20250305', name: 'web_search', max_uses: 2,
+    user_location: { type: 'approximate', city: 'Stony Brook', country: 'US' } });
+  assert.match(last.body.system, /Stony Brook, New York/);
+});
+
+test('answerLookup: continues a paused turn', async () => {
+  let calls = 0;
+  const fetchImpl = async (url, init) => {
+    calls++;
+    last = { body: JSON.parse(init.body) };
+    const body = calls === 1
+      ? { stop_reason: 'pause_turn', content: [{ type: 'server_tool_use', id: 's1', name: 'web_search', input: {} }] }
+      : { stop_reason: 'end_turn', content: [{ type: 'text', text: 'The Mets won.' }] };
+    return new Response(JSON.stringify(body));
+  };
+  assert.equal(await answerLookup({ apiKey: 'k', model: 'm', question: 'q', tz: NY, fetchImpl }), 'The Mets won.');
+  assert.equal(calls, 2);
+  assert.equal(last.body.messages[1].role, 'assistant');
 });

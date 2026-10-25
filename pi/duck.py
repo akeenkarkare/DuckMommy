@@ -132,7 +132,7 @@ class Duck:
 
     def on_command(self, c: dict):
         if c.get("type") == "say":    # due reminders, calendar heads-ups, dashboard "say it"
-            self.say(c.get("text", ""))
+            self.say(c.get("text", ""), now=bool(c.get("now")))   # now: part of the answer ("let me look that up")
         elif c.get("type") == "quack":
             self.voice.quack()
         elif c.get("type") == "coach":     # dashboard focus buttons: start_focus / break / finish / ...

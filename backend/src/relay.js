@@ -14,8 +14,7 @@ import { authorizeUrl, exchangeCode, fetchGoogleEvents, googleConfigured } from 
 import { localTimeZone } from './ics.js';
 import { daySummary, dueReminders } from './reminders.js';
 import { writeNudge } from './nudge.js';
-import { answerAgenda, answerRecall, answerWeather, friendlyWhen, parseRemindAt, transcribe, understand } from './memory.js';
-import { getWeather, weatherLine } from './weather.js';
+import { answerAgenda, answerLookup, answerRecall, friendlyWhen, parseRemindAt, transcribe, understand } from './memory.js';
 
 const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, ANTHROPIC_API_KEY } = process.env;
 const ELEVENLABS_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_flash_v2_5';
@@ -31,6 +30,11 @@ const LATE_REMINDER_MS = 10 * 60 * 1000;
 // "Remind me to drink water" -> "Okay but when?": the duck listens again without the wake word, and the
 // answer ("in two minutes") is read together with the first request. userId -> { heard, until }.
 const FOLLOW_UP_MS = 30 * 1000;
+// Where the duck is, for "what's the weather" / "near me" lookups (Claude's web search user_location).
+const LOOKUP_PLACE = process.env.DUCK_PLACE || 'Stony Brook, New York';
+const LOOKUP_LOCATION = process.env.DUCK_PLACE
+  ? { city: process.env.DUCK_PLACE.split(',')[0].trim(), timezone: localTimeZone() }
+  : { city: 'Stony Brook', region: 'New York', country: 'US', timezone: 'America/New_York' };
 const voiceFollowUps = new Map();   // later than this (you were away) -> "earlier you asked me to..."
 const TTS_SAMPLE_RATE = 22050;
 const PORT = Number(process.env.RELAY_PORT ?? 8080);
@@ -520,7 +524,7 @@ async function handleVoice(req, res) {
   if (!userId) return voiceReply(res, 200, { intent: 'none', heard: '', say: 'Open the dashboard first so I know who you are.' });
 
   const t0 = Date.now(), timing = {};
-  res.on('finish', () => log(`voice timing: speech-to-text ${timing.stt ?? '-'} ms, understand ${timing.understand ?? '-'} ms, total ${Date.now() - t0} ms (${MEMORY_MODEL})`));
+  res.on('finish', () => log(`voice timing: speech-to-text ${timing.stt ?? '-'} ms, understand ${timing.understand ?? '-'} ms, lookup ${timing.lookup ?? '-'} ms, total ${Date.now() - t0} ms (${MEMORY_MODEL})`));
   try {
     let heard;
     if (String(req.headers['content-type'] ?? '').startsWith('application/json')) {
@@ -602,26 +606,21 @@ async function handleVoice(req, res) {
       return voiceReply(res, 200, { intent: 'agenda', heard, say: answer || "Nothing on your calendar for that. You're free, bestie." });
     }
 
-    if (meant.intent === 'weather') {   // Open-Meteo numbers, Claude says them (template if Claude is down)
-      let weather;
-      try {
-        weather = await getWeather({ place: meant.place });
-      } catch (e) {
-        log('weather failed', e.message);
-        return voiceReply(res, 200, { intent: 'weather', heard, say: "The weather isn't loading right now. Try again in a sec." });
+    if (meant.intent === 'lookup') {   // Claude + web search: weather, news, scores, hours...
+      if (userId === activeUserId && duck) {   // searching takes a few seconds: say something now
+        send(duck, { type: 'command', command: { type: 'say', text: 'Hold up, let me look that up.', now: true } });
       }
-      if (!weather) return voiceReply(res, 200, { intent: 'weather', heard, say: `I couldn't find ${meant.place} on the map, bestie.` });
       const question = meant.question || heard;
       let answer = '';
       try {
-        answer = await answerWeather({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, question, weather, now, tz: MEMORY_TZ, name });
+        answer = await answerLookup({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, question, now, tz: MEMORY_TZ, name,
+          place: LOOKUP_PLACE, location: LOOKUP_LOCATION });
       } catch (e) {
-        log('weather answer failed, using the template:', e.message);
+        log('lookup failed', e.message);
       }
-      answer = answer || weatherLine(weather);
-      if (userId === activeUserId) emitToActive('memory', { action: 'weather', question, answer });
-      log('weather answered for', weather.place);
-      return voiceReply(res, 200, { intent: 'weather', heard, say: answer });
+      timing.lookup = Date.now() - now - (timing.understand ?? 0);
+      if (answer && userId === activeUserId) emitToActive('memory', { action: 'lookup', question, answer });
+      return voiceReply(res, 200, { intent: 'lookup', heard, say: answer || "I couldn't look that up right now. Try again in a sec." });
     }
 
     if (meant.intent === 'sentry') {   // "hey duck, sentry mode on": same setting as the dashboard toggle
