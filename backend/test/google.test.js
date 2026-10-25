@@ -97,9 +97,9 @@ test('says it 5 minutes before and once at the start, never twice', () => {
   const fired = new Set();
   assert.deepEqual(dueReminders([ev()], T0 - LEAD_MS - 1000, fired), []);
   const soon = dueReminders([ev()], T0 - LEAD_MS + 1000, fired);
-  assert.equal(soon[0].text, 'In 5 minutes: CSE 320 lecture.');
+  assert.equal(soon[0].text, 'Heads up, CSE 320 lecture starts in 5 minutes. Wrap it up.');
   assert.deepEqual(dueReminders([ev()], T0 - 60000, fired), []);
-  assert.equal(dueReminders([ev()], T0 + 1000, fired)[0].text, 'CSE 320 lecture is starting now.');
+  assert.equal(dueReminders([ev()], T0 + 1000, fired)[0].text, "CSE 320 lecture is starting now. Don't be late, it's not the vibe.");
   assert.deepEqual(dueReminders([ev()], T0 + 5000, fired), []);
 });
 
@@ -132,5 +132,5 @@ test('day summary: today only, in chunks the duck can say', () => {
   const lines = daySummary(items, now, { tz: NY });
   assert.equal(lines.join(' '), 'You have 3 things left today. At 10:00 AM, CSE 320 lecture. At 2:30 PM, Lab. At 11:59 PM, HW 4 is due.');
   assert.ok(lines.every((l) => l.length <= 200));
-  assert.deepEqual(daySummary([], now, { tz: NY }), ['Nothing else on your calendar today.']);
+  assert.deepEqual(daySummary([], now, { tz: NY }), ["Nothing else on your calendar today. You're free, bestie."]);
 });

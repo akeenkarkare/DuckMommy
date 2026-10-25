@@ -33,7 +33,7 @@ EMA_ALPHA = 0.3              # smoothing per frame (higher = snappier, noisier)
 
 CALIBRATE_S = 3.0            # how long to record someone's upright posture
 AWAY_RECALIBRATE_S = 10.0    # gone this long -> treat the next person as new
-CALIBRATE_MESSAGE = "Sit up tall for me!"
+CALIBRATE_MESSAGE = "Sit up tall for me, bestie. Calibrating."
 
 # degrees past your own upright baseline that count as a slouch
 # severity 0 -> 9, 50 -> 5, 100 -> 1

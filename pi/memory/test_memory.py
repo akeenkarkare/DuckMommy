@@ -171,7 +171,7 @@ class TestTalkToDuck(unittest.TestCase):
     def test_relay_down_says_so(self):
         talk = self.make(fire_on=1, fail=True)
         self.feed_all(talk, [tone()] + [tone()] * 2 + [hush()] * 4)
-        self.assertEqual(self.voice.said, ["My brain is offline right now, try again in a bit."])
+        self.assertEqual(self.voice.said, ["My brain is buffering. Try again in a sec."])
 
     def test_preroll_is_capped(self):
         talk = self.make(fire_on=10_000)

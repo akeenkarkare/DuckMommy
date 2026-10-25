@@ -188,7 +188,7 @@ const FOCUS_BUTTONS = [
   ['start_focus', '🎯 Start focus', 'primary'], ['more_time', '+10 min'], ['time_left', 'Time left?'],
   ['break', '☕ Break'], ['finish', '✓ Done'],
 ];
-const TONES = [['gentle', 'Gentle: kind friend'], ['coach', 'Coach: direct, upbeat'], ['savage', 'Savage: roasts your procrastination']];
+const TONES = [['gentle', 'Gentle: sweet bestie'], ['coach', 'Coach: hype + a little roast'], ['savage', 'Savage: full Gen Z roast']];
 
 function FocusPanel({ events, allEvents, now, s, send, canCommand, agenda }) {
   const taps = events.filter((e) => e.type === 'focus').slice(-6).reverse();

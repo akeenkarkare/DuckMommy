@@ -5,10 +5,13 @@ const API_URL = `${(process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com
 const TIMEOUT_MS = 7000;
 const MAX_CHARS = 220;
 
+// Akeen asked for the duck to talk Gen Z everywhere. Shared with memory.js (recall / calendar answers).
+export const GENZ_STYLE = 'Speak in Gen Z slang, like a funny Gen Z best friend: words like no cap, lowkey, bestie, it\'s giving, locked in, cooked, you ate, W and L, be so for real, delulu, touch grass, aura, main character. Use one or two per line so it still sounds natural, not forced. Spell slang as spoken words (for real, not gonna lie, oh my god), never as letters like fr, ngl or omg, because it is read aloud. No swearing.';
+
 const TONES = {
-  gentle: 'Warm and encouraging, like a kind friend. Never pushy.',
-  coach: 'A confident coach who believes in them: direct, upbeat, a little playful. Push, but kindly.',
-  savage: 'A funny, roasting best friend. Tease the procrastination, never the person: nothing about looks, body, intelligence or worth. Still ends with a push to act.',
+  gentle: 'Warm and encouraging, like a sweet Gen Z bestie hyping them up. Never pushy.',
+  coach: 'A confident coach who believes in them: direct, hype, funny, with a little roast. Push them to lock in.',
+  savage: 'A funny, roasting Gen Z best friend. Tease the procrastination, never the person: nothing about looks, body, intelligence or worth. Still ends with a push to act.',
 };
 
 const KINDS = {
@@ -34,6 +37,7 @@ export function buildPrompt({ kind, tone, facts, name }) {
     'You are their accountability buddy: you help them lock in and get their work done, like the future version of themselves who is glad they started early.',
     'Persuade with: the real deadline and time left, one concrete next step they can do in the next minute, and the payoff of getting it done. No guilt trips, no lecturing.',
     `Tone: ${style}`,
+    GENZ_STYLE,
     'Rules: reply with ONLY the words the duck says. One or two short sentences, at most 30 words. It is read aloud by text-to-speech, so no emoji, no markdown, no lists, no quotation marks, no stage directions.',
     'Only mention assignments, events, times and numbers that appear in the facts. Never invent deadlines. Say times in natural words ("in about three hours", "tomorrow"), not timestamps or minute counts over 90.',
     name ? `Their name is ${name}. Use it at most occasionally.` : '',
