@@ -24,6 +24,66 @@ function stamp(ts, now) {
 
 // Nest: everything you told the duck to remember. Read straight from Supabase (RLS: your rows only);
 // a live `memory` event from the relay means a new note was saved, so it reloads.
+function dueStamp(ts, now) {
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const days = Math.round((new Date(ts).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86400000);
+  if (ts - now < 60 * 60 * 1000 && ts > now) return `in ${Math.max(1, Math.round((ts - now) / 60000))} min`;
+  if (days <= 0) return `Today ${time}`;
+  if (days === 1) return `Tomorrow ${time}`;
+  if (days < 7) return `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
+}
+
+// Voice reminders ("hey duck, remind me in 5 days to ..."): still to be said. The relay says them when due.
+function Reminders({ allEvents, now }) {
+  const [list, setList] = useState(null);
+  const [error, setError] = useState(null);
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.from('reminders').select('id, text, due_at')
+      .is('delivered_at', null).order('due_at', { ascending: true }).limit(50);
+    if (error) {
+      setError(error.code === '42P01' || error.code === 'PGRST205'
+        ? 'Run backend/supabase/migrations/005_reminders.sql to turn on voice reminders.'
+        : `Couldn’t load reminders: ${error.message}`);
+      return setList([]);
+    }
+    setError(null);
+    setList(data);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const lastChange = allEvents.findLast((e) => e.type === 'memory' && ['reminder_set', 'reminder_due'].includes(e.value?.action))?.ts;
+  useEffect(() => { if (lastChange) load(); }, [lastChange, load]);
+
+  async function cancel(id) {
+    setList((l) => l.filter((r) => r.id !== id));
+    const { error } = await supabase.from('reminders').delete().eq('id', id);
+    if (error) { setError(`Couldn’t cancel that: ${error.message}`); load(); }
+  }
+
+  return (
+    <div className="section">
+      <h3>Upcoming reminders{list?.length ? ` · ${list.length}` : ''}</h3>
+      {error && <p className="error">{error}</p>}
+      {list === null ? <p className="empty">Loading…</p> : list.length === 0 ? (
+        !error && <p className="empty">None set. Try “hey duck, remind me in 5 days to email my TA.”</p>
+      ) : (
+        <ul className="list nest-list">
+          {list.map((r) => (
+            <li key={r.id}>
+              <span className="nest-note"><span aria-hidden>⏰</span><span>{r.text}</span></span>
+              <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                <span className="time">{dueStamp(Date.parse(r.due_at), now)}</span>
+                <button className="btn icon nest-forget" aria-label={`Cancel reminder “${r.text}”`} title="Cancel" onClick={() => cancel(r.id)}><ForgetIcon /></button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function NestPanel({ allEvents, now }) {
   const [notes, setNotes] = useState(null);
   const [error, setError] = useState(null);
@@ -76,6 +136,7 @@ export default function NestPanel({ allEvents, now }) {
     <>
       <p className="hint" style={{ margin: 0 }}>
         Say <b>“hey duck, remember…”</b> and it lands here. Ask <b>“hey duck, what did I tell you…?”</b> and the duck answers from these notes.
+        Also: <b>“remind me in 5 days to…”</b>, <b>“what’s on my calendar tomorrow?”</b>, <b>“let’s lock in”</b>.
       </p>
 
       {lastRecall && (
@@ -85,6 +146,8 @@ export default function NestPanel({ allEvents, now }) {
           <p style={{ margin: 0 }}>{lastRecall.value.answer}</p>
         </div>
       )}
+
+      <Reminders allEvents={allEvents} now={now} />
 
       <form className="section" onSubmit={add}>
         <h3>Add a note</h3>

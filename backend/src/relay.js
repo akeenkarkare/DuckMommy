@@ -14,7 +14,7 @@ import { authorizeUrl, exchangeCode, fetchGoogleEvents, googleConfigured } from 
 import { localTimeZone } from './ics.js';
 import { daySummary, dueReminders } from './reminders.js';
 import { writeNudge } from './nudge.js';
-import { answerRecall, transcribe, understand } from './memory.js';
+import { answerAgenda, answerRecall, friendlyWhen, parseRemindAt, transcribe, understand } from './memory.js';
 
 const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, ANTHROPIC_API_KEY } = process.env;
 const ELEVENLABS_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_flash_v2_5';
@@ -24,6 +24,9 @@ const MEMORY_MODEL = process.env.MEMORY_MODEL || ANTHROPIC_MODEL;   // fast mode
 const MEMORY_TZ = process.env.MEMORY_TZ || localTimeZone();
 const MEMORY_RECALL_LIMIT = 500;      // newest N memories go to Claude for a recall question (~15k tokens)
 const VOICE_MAX_BYTES = 1024 * 1024;  // ~30 s of 16 kHz mono WAV
+// Voice reminders ("hey duck, remind me in 5 days to ..."): saved in `reminders`, spoken when due.
+const VOICE_REMINDER_TICK_MS = 15 * 1000;
+const LATE_REMINDER_MS = 10 * 60 * 1000;   // later than this (you were away) -> "earlier you asked me to..."
 const TTS_SAMPLE_RATE = 22050;
 const PORT = Number(process.env.RELAY_PORT ?? 8080);
 for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN })) {
@@ -71,6 +74,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
 });
 
 let duck = null;            // the one duck's socket
+let duckPresent = null;     // last presence the duck reported (null = unknown)
 let activeUserId = null;    // who the duck belongs to right now
 let activeSettings = null;  // that user's settings row
 let activeName = null;      // their display name, for the coach's lines
@@ -275,6 +279,7 @@ async function handleAuth(ws, msg) {
 // ─── messages ────────────────────────────────────────────────────────────────
 function handleDuck(msg) {
   if (msg.type !== 'event' || !EVENT_TYPES.has(msg.event?.type)) return;
+  if (msg.event.type === 'presence') duckPresent = !!msg.event.value?.present;   // voice reminders wait until you're back
   if (!activeUserId) return log('dropped', msg.event.type, '(no active user)');
 
   const ts = Number.isFinite(msg.event.ts) ? msg.event.ts : Date.now();
@@ -518,7 +523,8 @@ async function handleVoice(req, res) {
     log(`voice heard ${heard.length} chars`);   // not the words: they can be private
     if (!heard) return voiceReply(res, 200, { intent: 'other', heard, say: "Sorry, I didn't catch that." });
 
-    const meant = await understand({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, transcript: heard, name });
+    const now = Date.now();
+    const meant = await understand({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, transcript: heard, name, now, tz: MEMORY_TZ });
 
     if (meant.intent === 'remember' && meant.memory) {
       const { error } = await supabase.from('memories').insert({ user_id: userId, text: meant.memory, source: 'voice' });
@@ -548,13 +554,83 @@ async function handleVoice(req, res) {
       return voiceReply(res, 200, { intent: 'recall', heard, say: answer || "I don't have a note about that." });
     }
 
-    return voiceReply(res, 200, { intent: 'other', heard, say: "Sorry, I didn't catch that. Say remember, then the thing." });
+    if (meant.intent === 'remind') {
+      if (!meant.reminder) return voiceReply(res, 200, { intent: 'remind', heard, say: 'What should I remind you about?' });
+      const due = parseRemindAt(meant.remind_at, MEMORY_TZ, now);
+      if (!due) return voiceReply(res, 200, { intent: 'remind', heard, say: 'When should I remind you? Try, hey duck, remind me tomorrow at 9 to call mom.' });
+      const { error } = await supabase.from('reminders')
+        .insert({ user_id: userId, text: meant.reminder, due_at: new Date(due).toISOString(), source: 'voice' });
+      if (error) {
+        log('reminder save failed (run migration 005?):', error.message);
+        return voiceReply(res, 200, { intent: 'remind', heard, say: "Sorry, I couldn't set that reminder." });
+      }
+      if (userId === activeUserId) emitToActive('memory', { action: 'reminder_set', text: meant.reminder, due_at: due });
+      log('reminder set for', new Date(due).toISOString());
+      return voiceReply(res, 200, { intent: 'remind', heard, say: `Okay, I'll remind you ${friendlyWhen(due, now, MEMORY_TZ)} to ${meant.reminder}.` });
+    }
+
+    if (meant.intent === 'agenda') {
+      const items = (agendas.get(userId)?.items ?? []).filter((i) => (i.end ?? i.start) >= now);
+      const { data: pending } = await supabase.from('reminders').select('text, due_at')
+        .eq('user_id', userId).is('delivered_at', null).order('due_at', { ascending: true }).limit(20);
+      const question = meant.question || heard;
+      const answer = await answerAgenda({
+        apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, question, items, reminders: pending ?? [], now, tz: MEMORY_TZ, name,
+      });
+      if (userId === activeUserId) emitToActive('memory', { action: 'agenda', question, answer });
+      log('agenda question answered');
+      return voiceReply(res, 200, { intent: 'agenda', heard, say: answer || "I don't see anything on your calendar for that." });
+    }
+
+    if (meant.intent === 'focus') {   // the duck's own coach answers ("Locking in for 25...")
+      if (userId !== activeUserId || !duck) return voiceReply(res, 200, { intent: 'focus', heard, say: "I can't reach my focus timer right now." });
+      send(duck, { type: 'command', command: { type: 'coach', name: meant.focus } });
+      log('voice focus command', meant.focus);
+      return voiceReply(res, 200, { intent: 'focus', heard, focus: meant.focus, say: '', quiet: true });
+    }
+
+    return voiceReply(res, 200, { intent: 'other', heard, say: "Sorry, I didn't catch that. You can say remember, remind me, or ask what's on your calendar." });
   } catch (e) {
     log('voice failed', e.message);
     return voiceReply(res, e.name === 'TimeoutError' ? 504 : 502, { intent: 'error', heard: '', say: 'My brain is offline right now, try again in a bit.' });
   }
 
 }
+// Voice reminders that are due: said by the duck once you're at the desk, then marked delivered.
+let reminderBusy = false, reminderTableWarned = false;
+setInterval(async () => {
+  if (reminderBusy || !activeUserId || !duck || duckPresent === false) return;
+  reminderBusy = true;
+  const userId = activeUserId, name = activeName;
+  try {
+    const now = Date.now();
+    const { data, error } = await supabase.from('reminders').select('id, text, due_at')
+      .eq('user_id', userId).is('delivered_at', null).lte('due_at', new Date(now).toISOString())
+      .order('due_at', { ascending: true }).limit(3);
+    if (error) {
+      if (!reminderTableWarned) log('voice reminders off (run migrations/005_reminders.sql?):', error.message);
+      reminderTableWarned = true;
+      return;
+    }
+    for (const r of data ?? []) {
+      // claim it first so a slow tick or a second relay can't say it twice
+      const { data: claimed } = await supabase.from('reminders').update({ delivered_at: new Date().toISOString() })
+        .eq('id', r.id).is('delivered_at', null).select('id');
+      if (!claimed?.length || userId !== activeUserId || !duck) continue;
+      const hey = name ? `Hey ${String(name).split(/\s+/)[0]}, ` : 'Hey, ';
+      const late = now - Date.parse(r.due_at) > LATE_REMINDER_MS;
+      const text = late ? `${hey}earlier you asked me to remind you to ${r.text}.` : `${hey}time to ${r.text}.`;
+      send(duck, { type: 'command', command: { type: 'say', text } });
+      emitToActive('memory', { action: 'reminder_due', text: r.text, due_at: Date.parse(r.due_at), late });
+      log('voice reminder delivered', late ? '(late)' : '');
+    }
+  } catch (e) {
+    log('voice reminder tick failed', e.message);
+  } finally {
+    reminderBusy = false;
+  }
+}, VOICE_REMINDER_TICK_MS);
+
 const server = createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/tts') return void handleTts(req, res);
   if (req.method === 'POST' && req.url === '/nudge') return void handleNudge(req, res);
@@ -596,6 +672,7 @@ wss.on('connection', (ws) => {
     clearTimeout(authTimer);
     if (ws === duck) {
       duck = null;
+      duckPresent = null;
       log('duck disconnected');
     } else if (ws.role === 'dashboard') {
       log('dashboard disconnected', ws.userId);

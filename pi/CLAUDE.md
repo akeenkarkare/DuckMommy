@@ -106,8 +106,10 @@ Each card: **needs** (the data it looks at) · **gets it from** · **looks for**
 - **Wake word:** offline Vosk with a grammar of just `hey duck` / `okay duck` / `hi duck` (`models/vosk-small-en`).
   Nothing leaves the Pi before the wake word. The last 1.5 s are kept so "hey duck remember…" in one breath works.
 - **Then:** records until 1.2 s of quiet (15 s max), LED `listening` while it does, posts the WAV to the relay's
-  `POST /voice`. The relay transcribes (ElevenLabs), Claude cleans it up and decides remember / recall,
-  saves to or searches Supabase `memories`, and returns the line to say. Ignored while the duck is talking.
+  `POST /voice`. The relay transcribes (ElevenLabs), Claude works out what was meant and returns the line to say:
+  remember / recall (Supabase `memories`), **remind** ("remind me in 5 days to…" → `reminders`; the relay says it
+  when due, once you're at the desk), **agenda** ("what's on my calendar tomorrow?"), **focus** ("let's lock in" →
+  the coach's timer; reply is `quiet` so the coach speaks instead). Ignored while the duck is talking.
 - **Files:** `memory/wake.py` (Vosk), `memory/segment.py` (when to stop recording), `memory/talk.py` (glue),
   `memory/run.py` (try it alone, or `--text` without a mic). Off with `--no-talk`.
 

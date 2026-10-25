@@ -41,7 +41,12 @@ export default function Dashboard() {
   // Live events animate the 3D duck (with the user's own messages in its speech bubble).
   const onEvent = useCallback((e) => {
     if (e.type === 'coach' && e.value?.text) return bridge.current.react({ type: 'say', value: { text: e.value.text } });
-    if (e.type === 'memory') return bridge.current.react({ type: 'say', value: { text: e.value?.action === 'recall' ? e.value.answer : 'Saved to your nest' } });
+    if (e.type === 'memory') {
+      const v = e.value ?? {};
+      const text = v.action === 'recall' || v.action === 'agenda' ? v.answer
+        : v.action === 'reminder_set' ? `⏰ ${v.text}` : v.action === 'reminder_due' ? `⏰ Time to ${v.text}` : 'Saved to your nest';
+      return bridge.current.react({ type: 'say', value: { text } });
+    }
     const st = s.settings ?? {};
     const message = e.type === 'posture' ? st.posture_message : e.type === 'sentry' ? st.sentry_message : e.type === 'presence' ? st.presence_message : undefined;
     bridge.current.react({ ...e, message });

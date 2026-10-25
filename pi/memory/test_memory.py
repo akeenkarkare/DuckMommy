@@ -161,6 +161,13 @@ class TestTalkToDuck(unittest.TestCase):
         self.feed_all(talk, [tone()] * 4 + [hush()] * 4)
         self.assertEqual((self.wake.n, self.posted, self.leds), (0, [], []))
 
+    def test_quiet_reply_is_not_spoken(self):
+        # "hey duck, let's lock in": the relay starts the coach's focus timer and the coach talks instead
+        talk = self.make(fire_on=1, reply={"intent": "focus", "heard": "lets lock in", "say": "", "quiet": True})
+        self.feed_all(talk, [tone()] + [tone()] * 2 + [hush()] * 4)
+        self.assertEqual(len(self.posted), 1)
+        self.assertEqual(self.voice.said, [])
+
     def test_relay_down_says_so(self):
         talk = self.make(fire_on=1, fail=True)
         self.feed_all(talk, [tone()] + [tone()] * 2 + [hush()] * 4)
