@@ -74,6 +74,7 @@ Each folder may get its own short CLAUDE.md with run/test commands. Keep this ro
 - Sentry: `cd pi/sentry && python3 run.py --trig <BCM> --echo <BCM>` (or `--no-ultrasonic`). Night vision is automatic. See `pi/sentry/README.md`.
 - Camera preview (dev only): laptop `pi/camera/view.sh`, then Pi `pi/camera/stream.sh <laptop-ip>`. See `pi/camera/README.md`.
 - **Website (relay + dashboard together): `./dev.sh`** (stop it, or anything left on its ports: `./stop.sh`) → http://localhost:3000 · `./dev.sh --fake-duck` adds the simulated duck (no Pi needed) · **on a server use `./dev.sh --prod`** (Next 16 dev mode won't hydrate for browsers opening it by IP/hostname)
+- **Server auto-deploy:** `scripts/autodeploy.sh` (on the server: pulls `main` every minute and restarts the site, ~2 min downtime per deploy; pause with `touch .no-autodeploy`)
 - Backend: `cd backend && npm run dev` · tests: `npm test`
 - Supabase: run each `backend/supabase/migrations/*.sql` once (003 coach + calendar, 004 Google Calendar, 004 memories, 005 voice reminders).
 - Camera won't start: `cd pi && ./doctor.sh`

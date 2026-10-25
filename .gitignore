@@ -14,3 +14,4 @@ __pycache__/
 pi/asl/data/**/citizen*
 # Trained sign model: built from ASL Citizen samples, so the same licence applies
 pi/asl/models/
+.no-autodeploy
