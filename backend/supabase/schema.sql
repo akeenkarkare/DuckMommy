@@ -111,3 +111,16 @@ create policy "own settings: update" on public.settings for update to authentica
 
 -- ─── Realtime: relay listens for settings changes and pushes them to the Pi ─
 alter publication supabase_realtime add table public.settings;
+
+
+-- ─── Google Calendar via Auth0 (migration 004) ────────────────────────────
+-- Only the Auth0 user id is stored; the Google tokens stay in Auth0.
+create table if not exists public.google_calendar (
+  user_id      uuid primary key references auth.users (id) on delete cascade,
+  auth0_sub    text not null check (char_length(auth0_sub) <= 200),
+  email        text check (char_length(email) <= 320),
+  connected_at timestamptz not null default now()
+);
+alter table public.google_calendar enable row level security;
+create policy "own google calendar: read" on public.google_calendar
+  for select to authenticated using ((select auth.uid()) = user_id);

@@ -23,6 +23,7 @@ test('unknown kind / tone fall back safely', () => {
 test('cleanLine strips quotes, markdown, emoji, speaker labels and newlines', () => {
   assert.equal(cleanLine('"**Lock in.** 🦆\nHW3 is due in three hours."'), 'Lock in. HW3 is due in three hours.');
   assert.equal(cleanLine('Duck Daddy: Get to it.'), 'Get to it.');
+  assert.equal(cleanLine('Duck Mommy: Get to it.'), 'Get to it.');
   assert.equal(cleanLine(''), '');
 });
 

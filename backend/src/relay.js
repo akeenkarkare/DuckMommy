@@ -6,10 +6,13 @@
 // The duck belongs to the "active user": whoever most recently opened the dashboard.
 
 import { createServer } from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { createClient } from '@supabase/supabase-js';
 import { buildAgenda, feedUrls } from './calendar.js';
+import { authorizeUrl, exchangeCode, fetchGoogleEvents, googleConfigured } from './google.js';
+import { localTimeZone } from './ics.js';
+import { daySummary, dueReminders } from './reminders.js';
 import { writeNudge } from './nudge.js';
 
 const { SUPABASE_URL, SUPABASE_SECRET_KEY, DUCK_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, ANTHROPIC_API_KEY } = process.env;
@@ -44,6 +47,17 @@ const VIDEO_MAX_BUFFER = 1024 * 1024;   // a watcher this far behind skips frame
 const videoAllowed = (email) => VIDEO_VIEWERS.includes('*') || (!!email && VIDEO_VIEWERS.includes(email.toLowerCase()));
 const AGENDA_REFRESH_MS = 10 * 60 * 1000;
 
+// Google Calendar through Auth0 (see google.js + backend/CLAUDE.md for the setup).
+const GOOGLE_ENV = {
+  AUTH0_DOMAIN: process.env.AUTH0_DOMAIN, AUTH0_CLIENT_ID: process.env.AUTH0_CLIENT_ID,
+  AUTH0_CLIENT_SECRET: process.env.AUTH0_CLIENT_SECRET, GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+  RELAY_PUBLIC_URL: process.env.RELAY_PUBLIC_URL || `http://192.168.1.67:${process.env.RELAY_PORT ?? 8080}`,
+};
+const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'http://192.168.1.67:3000').replace(/\/$/, '');
+const CONNECT_STATE_MS = 10 * 60 * 1000;
+const REMINDER_TICK_MS = 10 * 1000;
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
@@ -53,7 +67,10 @@ let activeUserId = null;    // who the duck belongs to right now
 let activeSettings = null;  // that user's settings row
 let activeName = null;      // their display name, for the coach's lines
 const buffers = new Map();  // user_id -> events from the last 5 min
-const agendas = new Map();  // user_id -> { key, items, errors, feeds, fetched_at }
+const agendas = new Map();  // user_id -> { key, items, errors, feeds, fetched_at, google }
+const googleLinks = new Map();   // user_id -> { sub, email } | null  (cache of the google_calendar table)
+const connectStates = new Map(); // OAuth state -> { userId, exp }
+const remindersFired = new Set(); // "<item id>@<start>:soon|now" already spoken
 
 const log = (...args) => console.log(new Date().toISOString().slice(11, 19), ...args);
 const send = (ws, msg) => ws?.readyState === 1 && ws.send(JSON.stringify(msg));
@@ -143,7 +160,7 @@ async function setActiveUser(userId) {
 function sendAgenda(userId) {
   const a = agendas.get(userId);
   if (!a) return;
-  sendToUser(userId, { type: 'agenda', items: a.items, errors: a.errors, feeds: a.feeds, fetched_at: a.fetched_at });
+  sendToUser(userId, { type: 'agenda', items: a.items, errors: a.errors, feeds: a.feeds, fetched_at: a.fetched_at, google: a.google });
   if (userId === activeUserId) {
     const items = a.items.map(({ id, title, kind, start, end, all_day }) => ({ id, title, kind, start, end, all_day }));
     send(duck, { type: 'agenda', items });
@@ -152,7 +169,9 @@ function sendAgenda(userId) {
 
 const refreshing = new Set();
 async function refreshAgenda(userId, urlsText, { force = false } = {}) {
-  const key = feedUrls(urlsText).join('\n');
+  const link = await googleLink(userId);
+  const urls = feedUrls(urlsText).join('\n');
+  const key = urls + (link ? `\ngoogle:${link.sub}` : '');
   const cached = agendas.get(userId);
   if (!force && cached && cached.key === key && Date.now() - cached.fetched_at < AGENDA_REFRESH_MS) {
     return sendAgenda(userId);
@@ -160,7 +179,19 @@ async function refreshAgenda(userId, urlsText, { force = false } = {}) {
   if (refreshing.has(userId)) return;
   refreshing.add(userId);
   try {
-    const agenda = key ? await buildAgenda(key) : { items: [], errors: [], feeds: 0, fetched_at: Date.now() };
+    const agenda = urls ? await buildAgenda(urls) : { items: [], errors: [], feeds: 0, fetched_at: Date.now() };
+    agenda.google = { available: googleConfigured(GOOGLE_ENV), connected: !!link, email: link?.email ?? null };
+    if (link) {   // Google Calendar (via Auth0) joins the iCal feeds in one agenda
+      try {
+        const g = await fetchGoogleEvents(GOOGLE_ENV, link.sub);
+        agenda.items = [...agenda.items, ...g.items].sort((a, b) => a.start - b.start).slice(0, 120);
+        agenda.google.calendars = g.calendars;
+        if (g.failed) agenda.errors.push(`Google Calendar: ${g.failed} calendar(s) couldn't be read`);
+      } catch (e) {
+        log('google calendar failed', e.message);
+        agenda.errors.push(`Google Calendar: ${e.message}`);
+      }
+    }
     agendas.set(userId, { key, ...agenda });
     if (key) log(`agenda for ${userId}: ${agenda.items.length} items from ${agenda.feeds} feed(s)${agenda.errors.length ? `, ${agenda.errors.length} error(s)` : ''}`);
     sendAgenda(userId);
@@ -250,6 +281,31 @@ function handleDashboard(ws, msg) {
     if (!msg.on) send(ws, { type: 'video_status', streaming: false, reason: null, fps: VIDEO_FPS });
     updateVideo();
     return;
+  }
+
+  if (msg.type === 'google_connect') {   // Calendar tab: "Connect Google Calendar"
+    if (!googleConfigured(GOOGLE_ENV)) return send(ws, { type: 'google_error', error: 'Google Calendar isn\'t set up on the relay yet (AUTH0_* in backend/.env).' });
+    const state = randomBytes(18).toString('base64url');
+    connectStates.set(state, { userId: ws.userId, exp: Date.now() + CONNECT_STATE_MS });
+    return send(ws, { type: 'google_auth_url', url: authorizeUrl(GOOGLE_ENV, state) });
+  }
+
+  if (msg.type === 'google_disconnect') {
+    supabase.from('google_calendar').delete().eq('user_id', ws.userId).then(({ error }) => {
+      if (error) return send(ws, { type: 'google_error', error: error.message });
+      googleLinks.set(ws.userId, null);
+      log('google calendar disconnected for', ws.userId);
+      return supabase.from('settings').select('calendar_urls').eq('user_id', ws.userId).single()
+        .then(({ data }) => refreshAgenda(ws.userId, data?.calendar_urls, { force: true }));
+    });
+    return;
+  }
+
+  if (msg.type === 'say_agenda') {   // "Read my day aloud"
+    const a = agendas.get(ws.userId);
+    const ok = isActive && !!duck;
+    if (ok) for (const text of daySummary(a?.items ?? [], Date.now(), { tz: localTimeZone() })) send(duck, { type: 'command', command: { type: 'say', text } });
+    return send(ws, { type: 'command_ack', ok, command: 'say_agenda' });
   }
 
   if (msg.type === 'agenda_refresh') {   // "refresh" button: re-read this user's own links
@@ -347,12 +403,66 @@ async function handleNudge(req, res) {
   }
 }
 
+// ─── Google Calendar: link storage, OAuth callback, spoken reminders ────────────
+async function googleLink(userId) {
+  if (googleLinks.has(userId)) return googleLinks.get(userId);
+  const { data, error } = await supabase.from('google_calendar').select('auth0_sub, email').eq('user_id', userId).maybeSingle();
+  if (error) {   // table missing until migration 004 is run: behave as "not connected"
+    log('google_calendar lookup failed (run migration 004?):', error.message);
+    return null;
+  }
+  const link = data ? { sub: data.auth0_sub, email: data.email } : null;
+  googleLinks.set(userId, link);
+  return link;
+}
+
+async function handleGoogleCallback(req, res) {
+  const back = (result, reason) => {
+    res.writeHead(302, { location: `${DASHBOARD_URL}/?calendar=${result}${reason ? `&reason=${encodeURIComponent(reason)}` : ''}` });
+    res.end();
+  };
+  const q = new URL(req.url, 'http://relay').searchParams;
+  const pending = connectStates.get(q.get('state'));
+  connectStates.delete(q.get('state'));
+  if (!pending || pending.exp < Date.now()) return back('error', 'That link expired. Try Connect again.');
+  if (q.get('error')) return back('error', q.get('error_description') || q.get('error'));
+  try {
+    const { sub, email } = await exchangeCode(GOOGLE_ENV, q.get('code'));
+    const { error } = await supabase.from('google_calendar')
+      .upsert({ user_id: pending.userId, auth0_sub: sub, email, connected_at: new Date().toISOString() });
+    if (error) throw new Error(error.message);
+    googleLinks.set(pending.userId, { sub, email });
+    log('google calendar connected for', pending.userId, email ?? sub);
+    const { data } = await supabase.from('settings').select('calendar_urls').eq('user_id', pending.userId).single();
+    refreshAgenda(pending.userId, data?.calendar_urls, { force: true });
+    back('connected');
+  } catch (e) {
+    log('google connect failed', e.message);
+    back('error', e.message.slice(0, 160));
+  }
+}
+
+// 5 minutes before and at the start of each timed event: the duck says it, the dashboard shows it.
+setInterval(() => {
+  for (const [state, p] of connectStates) if (p.exp < Date.now()) connectStates.delete(state);
+  if (!activeUserId) return;
+  const a = agendas.get(activeUserId);
+  for (const r of dueReminders(a?.items, Date.now(), remindersFired)) {
+    if (duck) send(duck, { type: 'command', command: { type: 'say', text: r.text } });
+    const event = { user_id: activeUserId, type: 'calendar', value: { text: r.text, title: r.title, when: r.when, start: r.start }, ts: Date.now() };
+    recentEvents(activeUserId).push(event);
+    sendToUser(activeUserId, { type: 'event', event });
+    log('reminder:', r.text);
+  }
+}, REMINDER_TICK_MS);
+
 const server = createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/tts') return void handleTts(req, res);
   if (req.method === 'POST' && req.url === '/nudge') return void handleNudge(req, res);
+  if (req.method === 'GET' && req.url.startsWith('/auth/google/callback')) return void handleGoogleCallback(req, res);
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID), coach_ai: !!ANTHROPIC_API_KEY, live_view: VIDEO_VIEWERS.length > 0, watching: watchers().length }));
+    return res.end(JSON.stringify({ ok: true, duck_connected: !!duck, dashboards: dashboards().length, tts: !!(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID), coach_ai: !!ANTHROPIC_API_KEY, google_calendar: googleConfigured(GOOGLE_ENV), live_view: VIDEO_VIEWERS.length > 0, watching: watchers().length }));
   }
   res.writeHead(404).end();
 });
@@ -403,7 +513,7 @@ setInterval(() => {
 }, HEARTBEAT_MS);
 
 server.listen(PORT, () => {
-  log(`relay listening on ws://localhost:${PORT}`);
+  log(`relay listening on port ${PORT} (${GOOGLE_ENV.RELAY_PUBLIC_URL.replace(/^http/, 'ws')})`);
   log(!VIDEO_VIEWERS.length ? 'live view off (VIDEO_VIEWERS=off)'
     : VIDEO_VIEWERS.includes('*') ? 'live view on for any logged-in user the duck is with'
     : `live view only for: ${VIDEO_VIEWERS.join(', ')}`);

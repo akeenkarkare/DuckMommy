@@ -117,13 +117,12 @@ class StepIn(unittest.TestCase):
         deadlines = [f["item"]["in_minutes"] for _, k, f in out if k == "deadline"]
         self.assertEqual(len(deadlines), 4, deadlines)      # 24 h, 3 h, 1 h, 15 min
 
-    def test_event_heads_up_beats_the_gap(self):
+    def test_events_are_left_to_the_relay(self):
         c = make(agenda=[item("CSE 320 lecture", 18, kind="event")])
         c._arrival_pending = False
         c._last_line = 0                                    # something was just said
         _, out = run(c, 1, 300, step=1)
-        self.assertEqual(kinds(out), ["event"])
-        self.assertLessEqual(out[0][2]["item"]["in_minutes"], 15)
+        self.assertNotIn("event", kinds(out))   # the relay says it 5 min before + at the start
 
     def test_all_day_events_dont_get_a_15_min_alarm(self):
         c = make(agenda=[item("Holiday", 10, kind="event", all_day=True)])

@@ -131,6 +131,7 @@ export default function DuckStage() {
       ripples: [], nextBlink: 2, blink: 0,
       bubbleUntil: 0, sides: {},
       intro: 0,
+      elastic: { yaw: 0, pitch: 0, vy: 0, vp: 0 },   // tab open: drag offset that springs back
       water: false, nextVoiceRip: 0, nextIdleRip: 1, splash: 0, airborne: false,
     };
     ctrl.current = c;
@@ -205,6 +206,7 @@ export default function DuckStage() {
         case 'presence': if (v.present) { hop(); bubble(e.message || 'Welcome back!'); } break;
         case 'focus': hop(2); bubble('Focus mode 🎯', 2200); break;
         case 'say': talk(v.text); bubble(v.text, 3500); break;
+        case 'calendar': talk(v.text); bubble(`📅 ${v.text}`, 5000); break;
         default: break;
       }
     };
@@ -239,17 +241,25 @@ export default function DuckStage() {
           c.yawVel = dx * 0.009 * 60;
           c.lastInput = now;
           canvas.style.cursor = 'grabbing';
+        } else if (d.moved && live.current.mode === 'dashboard') {
+          // a tab is open: the duck can still be twisted, with rubber-band resistance,
+          // and springs back to its pose on release (see the elastic spring in the loop)
+          const e = c.elastic;
+          e.yaw += dx * 0.009 / (1 + Math.abs(e.yaw) * 1.2);
+          e.pitch = clamp(e.pitch + dy * 0.006 / (1 + Math.abs(e.pitch) * 1.5), -0.9, 0.9);
+          e.vy = e.vp = 0;
+          canvas.style.cursor = 'grabbing';
         }
         return;
       }
       const h = hit(e.clientX, e.clientY);
-      canvas.style.cursor = h ? 'pointer' : live.current.mode === 'dashboard' && !live.current.focus ? 'grab' : 'default';
+      canvas.style.cursor = h ? 'pointer' : live.current.mode === 'dashboard' ? 'grab' : 'default';
     };
     const onUp = (e) => {
       const d = c.drag;
       c.drag = null;
       if (!d) return;
-      canvas.style.cursor = live.current.mode === 'dashboard' && !live.current.focus ? 'grab' : 'default';
+      canvas.style.cursor = live.current.mode === 'dashboard' ? 'grab' : 'default';
       if (d.moved) return;
       const h = hit(e.clientX, e.clientY);
       if (live.current.mode !== 'dashboard') {
@@ -371,7 +381,15 @@ export default function DuckStage() {
       // intro pop
       c.intro = Math.min(1, c.intro + dt / (reduced ? 0.2 : 1.1));
       duck.group.scale.setScalar(Math.max(0.001, easeOutBack(c.intro)));
-      duck.group.rotation.set(S.pitch, S.yaw, 0);
+      // elastic snap-back after dragging while a tab is open: under-damped spring = a little overshoot
+      const e = c.elastic;
+      if (!c.drag) {
+        const K = 60, D = reduced ? 2 * Math.sqrt(K) : 7;
+        e.vy += (-K * e.yaw - D * e.vy) * dt;  e.yaw += e.vy * dt;
+        e.vp += (-K * e.pitch - D * e.vp) * dt;  e.pitch += e.vp * dt;
+        if (Math.abs(e.yaw) + Math.abs(e.pitch) + Math.abs(e.vy) + Math.abs(e.vp) < 1e-4) e.yaw = e.pitch = e.vy = e.vp = 0;
+      }
+      duck.group.rotation.set(S.pitch + e.pitch, S.yaw + e.yaw, 0);
 
       // springs & idle life
       c.squishV += (-160 * c.squish - 10 * c.squishV) * dt;

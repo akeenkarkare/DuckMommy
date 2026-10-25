@@ -4,7 +4,7 @@ Like Tomo, the trick is knowing when to step in and when to stay quiet:
 
   step in   arrival brief    you sat down and something is due today / starts soon
             deadline         a due date crossed 24 h / 3 h / 1 h / 15 min (once each)
-            event            a calendar event starts in 15 min
+            (calendar events are announced by the relay instead: 5 min before + at the start)
             checkin          you've been at the desk a while (coach_interval_min, +-20%)
             idle             no movement for 5 min (camera motion): zoned out?
             focus sessions   from the START/FOCUS signs (or a dashboard command):
@@ -220,6 +220,9 @@ class Coach:
                 "in_minutes": max(0, round(self._minutes_until(item, wall)))}
 
     def _event_soon(self, wall: float) -> dict | None:
+        # Off: the relay says timed events 5 min before and at the start (backend/src/reminders.js),
+        # so the coach would only repeat it. Deadlines ("due") are still the coach's job.
+        return None
         for item in self._upcoming(wall):
             if (item["kind"] == "event" and not item["all_day"]
                     and self._minutes_until(item, wall) <= EVENT_LEAD_MIN

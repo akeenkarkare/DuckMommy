@@ -260,32 +260,64 @@ function CalendarField({ s }) {
   );
 }
 
-function CalendarPanel({ now, s, send, agenda, connected }) {
-  const upcoming = agenda.items.filter((i) => (i.end ?? i.start) >= now).slice(0, 15);
+const GOOGLE_CALENDAR = 'https://calendar.google.com/';
+
+function GoogleCalendar({ agenda, send, connected, notice }) {
+  const g = agenda.google ?? {};
+  if (g.connected) {
+    return (
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <span><span className="icon">🟢</span>Google Calendar{g.email ? ` · ${g.email}` : ''}{g.calendars ? <span className="hint"> · {g.calendars} calendar{g.calendars > 1 ? 's' : ''}</span> : null}</span>
+        <button className="chip" disabled={!connected} onClick={() => send({ type: 'google_disconnect' })}>Disconnect</button>
+      </div>
+    );
+  }
+  return (
+    <div className="section">
+      <button className="btn primary" disabled={!connected || g.available === false} onClick={() => send({ type: 'google_connect' })}>
+        Connect Google Calendar
+      </button>
+      {g.available === false && <p className="hint" style={{ margin: 0 }}>Google sign-in isn’t set up on the relay yet (AUTH0_* in backend/.env).</p>}
+      {notice && <p className={notice.ok ? 'hint' : 'error'} style={{ margin: 0 }}>{notice.text}</p>}
+    </div>
+  );
+}
+
+function CalendarPanel({ now, s, send, agenda, connected, canCommand, googleNotice }) {
+  const upcoming = agenda.items.filter((i) => (i.end ?? i.start) >= now);
   const fetched = agenda.fetched_at ? ago(agenda.fetched_at, now) : null;
+  const sources = (agenda.feeds ?? 0) + (agenda.google?.connected ? 1 : 0);
   return (
     <>
+      {googleNotice?.ok && <p className="hint" style={{ margin: 0 }}>{googleNotice.text}</p>}
+      <GoogleCalendar agenda={agenda} send={send} connected={connected} notice={googleNotice?.ok ? null : googleNotice} />
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <span className="hint">{agenda.feeds ? `${agenda.feeds} calendar${agenda.feeds > 1 ? 's' : ''}${fetched ? ` · updated ${fetched}` : ''}` : 'No calendars yet'}</span>
-        <button className="chip" disabled={!connected} onClick={() => send({ type: 'agenda_refresh' })}>↻ Refresh</button>
+        <span className="hint">{sources ? `${sources} calendar source${sources > 1 ? 's' : ''}${fetched ? ` · updated ${fetched}` : ''}` : 'No calendars yet'}</span>
+        <span className="row" style={{ gap: 6 }}>
+          <button className="chip" disabled={!canCommand || !upcoming.length} onClick={() => send({ type: 'say_agenda' })}>🔊 Read my day</button>
+          <button className="chip" disabled={!connected} onClick={() => send({ type: 'agenda_refresh' })}>↻ Refresh</button>
+        </span>
       </div>
       {agenda.errors?.map((e) => <p key={e} className="error">{e}</p>)}
       <div className="section">
-        <h3>Up next</h3>
-        {upcoming.length === 0 ? <p className="empty">{agenda.feeds ? 'Nothing in the next 7 days. Enjoy it.' : 'Add a calendar link below and the duck will remind you before things are due.'}</p> : (
-          <ul className="list">
+        <h3>Coming up · next 7 days</h3>
+        {upcoming.length === 0 ? <p className="empty">{sources ? 'Nothing in the next 7 days. Enjoy it.' : 'Connect Google Calendar (or add a calendar link below) and the duck will remind you before things start.'}</p> : (
+          <ul className="list cal-list">
             {upcoming.map((i) => (
               <li key={i.id}>
-                <span><span className="icon">{i.kind === 'due' ? '📌' : '📅'}</span>{i.title}{i.kind === 'due' && <span className="hint"> · due</span>}</span>
-                <span className="time">{when(i.start, now, i.all_day)}</span>
+                <a href={i.link ?? GOOGLE_CALENDAR} target="_blank" rel="noreferrer" title="Open in Google Calendar">
+                  <span><span className="icon">{i.kind === 'due' ? '📌' : '📅'}</span>{i.title}{i.kind === 'due' && <span className="hint"> · due</span>}</span>
+                  <span className="time">{when(i.start, now, i.all_day)}</span>
+                </a>
               </li>
             ))}
           </ul>
         )}
-        <p className="hint" style={{ margin: 0 }}>The duck mentions what’s due when you sit down, then reminds you 24 h, 3 h, 1 h and 15 min before. Events get a heads-up 15 min before.</p>
+        <a className="btn" href={GOOGLE_CALENDAR} target="_blank" rel="noreferrer">Open Google Calendar ↗</a>
+        <p className="hint" style={{ margin: 0 }}>Events: the duck says it out loud 5 minutes before and again when it starts. Deadlines: reminders 24 h, 3 h, 1 h and 15 min before, and when you sit down.</p>
       </div>
       <div className="section">
-        <h3>Calendars</h3>
+        <h3>Other calendars (iCal links)</h3>
         <CalendarField s={s} />
       </div>
     </>
