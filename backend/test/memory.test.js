@@ -13,7 +13,7 @@ const claudeReply = (text, extra = {}) => async (url, init) => {
 test('understand: garbled remember -> clean sentence, sends the structured-output schema', async () => {
   const fetchImpl = claudeReply(JSON.stringify({ intent: 'remember', memory: 'My keys are in the blue drawer.', question: '' }));
   const out = await understand({ apiKey: 'k', model: 'claude-opus-5-5', transcript: 'um remember like my keys r in the blew draw', fetchImpl });
-  assert.deepEqual(out, { intent: 'remember', memory: 'My keys are in the blue drawer.', question: '', reminder: '', remind_at: '', focus: '', sentry: '', reply: '' });
+  assert.deepEqual(out, { intent: 'remember', memory: 'My keys are in the blue drawer.', question: '', reminder: '', remind_at: '', focus: '', sentry: '', posture: '', reply: '' });
   assert.equal(last.body.model, 'claude-opus-5-5');
   assert.equal(last.body.max_tokens, 4096);
   assert.equal(last.body.output_config.format.type, 'json_schema');
@@ -101,7 +101,7 @@ test('understand: remind intent, prompt carries the current local time', async (
   assert.equal(out.remind_at, '2026-10-29T19:00');
   assert.match(last.body.system, /Saturday, October 24, 2026(,| at) 7:00 PM/);
   assert.match(last.body.system, /YYYY-MM-DDTHH:MM/);
-  assert.deepEqual(last.body.output_config.format.schema.properties.intent.enum, ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'lookup', 'other']);
+  assert.deepEqual(last.body.output_config.format.schema.properties.intent.enum, ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'posture', 'lookup', 'other']);
 });
 
 test('understand: focus needs a known command, else other', async () => {

@@ -52,7 +52,7 @@ const EVENT_TYPES = new Set(['posture', 'pat', 'sentry', 'focus', 'presence', 's
 // Pushed to the Pi. calendar_urls is deliberately NOT here: the links are secret and only the relay fetches them.
 const SETTINGS_FIELDS = [
   'volume', 'posture_message', 'sentry_message', 'presence_message',
-  'posture_severity', 'posture_delay_s', 'sentry_enabled', 'quack_enabled',
+  'posture_enabled', 'posture_severity', 'posture_delay_s', 'sentry_enabled', 'quack_enabled',
   'sign_enabled', 'sound_alerts_enabled',
   'coach_enabled', 'coach_interval_min', 'coach_tone',
 ];
@@ -541,6 +541,20 @@ function emitToActive(type, value) {
   sendToUser(activeUserId, { type: 'event', event });
 }
 
+// A voice on/off command ("sentry mode on", "posture off"): save it like the dashboard toggle would,
+// push it to the duck, and flip the toggle on that user's open dashboards. False if it couldn't be saved.
+async function voiceToggle(userId, key, on) {
+  const { error } = await supabase.from('settings').update({ [key]: on }).eq('user_id', userId);
+  if (error) { log(`voice ${key} failed`, error.message); return false; }
+  if (userId === activeUserId && activeSettings) {
+    activeSettings[key] = on;
+    pushSettings();
+  }
+  sendToUser(userId, { type: 'settings_patch', settings: { [key]: on } });
+  log(`voice ${key}`, on ? 'on' : 'off');
+  return true;
+}
+
 async function handleVoice(req, res) {
   const auth = String(req.headers.authorization ?? '');
   if (!tokenMatches(auth.replace(/^Bearer /, ''))) return res.writeHead(401).end();
@@ -664,20 +678,22 @@ async function handleVoice(req, res) {
 
     if (meant.intent === 'sentry') {   // "hey duck, sentry mode on": same setting as the dashboard toggle
       const on = meant.sentry === 'on';
-      const { error } = await supabase.from('settings').update({ sentry_enabled: on }).eq('user_id', userId);
-      if (error) {
-        log('sentry setting failed', error.message);
+      if (!(await voiceToggle(userId, 'sentry_enabled', on))) {
         return voiceReply(res, 200, { intent: 'sentry', heard, say: "Couldn't flip sentry mode, that's an L. Try the dashboard." });
       }
-      if (userId === activeUserId && activeSettings) {
-        activeSettings.sentry_enabled = on;
-        pushSettings();
-      }
-      sendToUser(userId, { type: 'settings_patch', settings: { sentry_enabled: on } });   // flips the dashboard toggle
-      log('voice sentry', on ? 'on' : 'off');
       return voiceReply(res, 200, { intent: 'sentry', heard, say: on
         ? "Sentry mode on. Go do your thing, I'll guard the desk and ping your laptop if anyone shows up."
         : 'Sentry mode off. The desk is all yours, bestie.' });
+    }
+
+    if (meant.intent === 'posture') {   // "hey duck, posture off": same setting as the dashboard toggle
+      const on = meant.posture === 'on';
+      if (!(await voiceToggle(userId, 'posture_enabled', on))) {
+        return voiceReply(res, 200, { intent: 'posture', heard, say: "Couldn't change posture checks right now. Try the dashboard." });
+      }
+      return voiceReply(res, 200, { intent: 'posture', heard, say: on
+        ? "Posture checks back on. Sit up, bestie, I'm watching."
+        : "Posture checks off. Slouch in peace, I won't say a word." });
     }
 
     if (meant.intent === 'focus') {   // the duck's own coach answers ("Locking in for 25...")

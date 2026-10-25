@@ -15,7 +15,7 @@ function command(text) {
   return words.slice(start).join(' ');
 }
 
-const blank = { intent: 'other', memory: '', question: '', reminder: '', remind_at: '', focus: '', sentry: '', reply: '' };
+const blank = { intent: 'other', memory: '', question: '', reminder: '', remind_at: '', focus: '', sentry: '', posture: '', reply: '' };
 
 /** A `understand()`-shaped result for a simple command, or null to ask Claude. */
 export function quickIntent(text, { now = Date.now(), tz = 'UTC' } = {}) {
@@ -26,6 +26,13 @@ export function quickIntent(text, { now = Date.now(), tz = 'UTC' } = {}) {
     const off = /\b(off|disable|stop|deactivate|disarm|cancel)\b/.test(c);
     const on = /\b(on|enable|start|activate|arm|turn it on)\b/.test(c);
     if (off !== on) return { ...blank, intent: 'sentry', sentry: on ? 'on' : 'off' };
+    return null;
+  }
+  // "posture off", "turn off posture checks", "stop telling me to sit up"; "how's my posture" goes to Claude
+  if (/\bposture\b|\bsit(ting)? up\b/.test(c)) {
+    const off = /\b(off|disable|stop|deactivate|pause|mute|quiet|cancel)\b/.test(c);
+    const on = /\b(on|enable|start|activate|resume|unmute)\b/.test(c);
+    if (off !== on) return { ...blank, intent: 'posture', posture: on ? 'on' : 'off' };
     return null;
   }
   if (/\b(lock(ing)? in|start (a |the )?(focus|pomodoro)|focus (mode|session|time)( on)?|pomodoro)\b/.test(c)

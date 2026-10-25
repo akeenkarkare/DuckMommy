@@ -12,6 +12,13 @@ test('sentry on/off from real transcripts', () => {
   assert.equal(q('hey duck sentry mode'), null);   // on or off? ask Claude
 });
 
+test('posture on/off', () => {
+  assert.deepEqual([q('Hey duck, turn off posture').intent, q('Hey duck, turn off posture').posture], ['posture', 'off']);
+  assert.equal(q('hey doc posture checks back on').posture, 'on');
+  assert.equal(q('hey duck stop telling me to sit up').posture, 'off');
+  assert.equal(q("hey duck how's my posture"), null);   // a question, not a toggle: Claude
+});
+
 test('focus commands', () => {
   assert.equal(q("hey duck let's lock in").focus, 'start_focus');
   assert.equal(q("Hey duck, I'm taking a break").focus, 'break');

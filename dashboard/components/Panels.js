@@ -167,6 +167,8 @@ function CameraPanel({ events, now, windowMs, s, watch, video, canCommand, liveR
       </div>
       <div className="section">
         <h3>Posture</h3>
+        <Toggle s={s} k="posture_enabled" label="Posture checks" hint="Or say “hey duck, posture off” / “posture on”."
+          migration="008_posture_toggle.sql" />
         <RangeField s={s} k="posture_severity" label="Severity" hint="0 = only big slouches count · 100 = any lean counts" />
         <RangeField s={s} k="posture_delay_s" label="Speak after slouching for" min={1} max={30} format={(v) => `${v}s`} />
       </div>

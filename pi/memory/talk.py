@@ -75,6 +75,7 @@ class TalkToDuck:
         self.recorder: UtteranceRecorder | None = None
         self.sending = False
         self.say_wait_s = SAY_WAIT_S
+        self.said_at: float | None = None   # clock() when the last thing said to the duck ended
 
     def threaded(self):
         """A non-blocking feed for the mic thread: chunks go through a small queue to our own
@@ -103,6 +104,7 @@ class TalkToDuck:
         if self.recorder is not None:
             done = self.recorder.feed(pcm)
             if done is not None:
+                self.said_at = self.clock()
                 spoke, follow_up = self.recorder.spoke, self.follow_up
                 self.recorder, self.follow_up = None, False
                 self.on_listening(False)

@@ -77,16 +77,17 @@ export function localTime(ms, tz) {
 const UNDERSTAND_SCHEMA = {
   type: 'object',
   properties: {
-    intent: { type: 'string', enum: ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'lookup', 'other'] },
+    intent: { type: 'string', enum: ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'posture', 'lookup', 'other'] },
     memory: { type: 'string' },
     question: { type: 'string' },
     reminder: { type: 'string' },
     remind_at: { type: 'string' },
     focus: { type: 'string', enum: ['', ...FOCUS_COMMANDS] },
     sentry: { type: 'string', enum: ['', 'on', 'off'] },
+    posture: { type: 'string', enum: ['', 'on', 'off'] },
     reply: { type: 'string' },
   },
-  required: ['intent', 'memory', 'question', 'reminder', 'remind_at', 'focus', 'sentry', 'reply'],
+  required: ['intent', 'memory', 'question', 'reminder', 'remind_at', 'focus', 'sentry', 'posture', 'reply'],
   additionalProperties: false,
 };
 
@@ -102,6 +103,7 @@ export function buildUnderstandPrompt({ transcript, name, now = Date.now(), tz =
     '- agenda: they ask about their calendar, schedule, deadlines or upcoming reminders ("what\'s on my calendar", "what do I have tomorrow", "when is my next class", "am I free at 3", "what\'s due this week", "what reminders do I have").',
     '- focus: they want to control a focus / lock-in session. Set focus to one of: start_focus ("let\'s lock in", "start a focus session", "pomodoro"), break ("I\'m taking a break"), finish ("I\'m done", "stop the session"), time_left ("how much time is left"), more_time ("give me more time", "add ten minutes").',
     '- sentry: they want guard / sentry mode on or off ("sentry mode on", "guard my desk", "watch my stuff while I\'m gone", "turn off sentry"). Set sentry to on or off.',
+    '- posture: they want posture checks (the duck telling them to sit up) on or off ("posture off", "stop telling me to sit up", "turn posture checks back on"). Set posture to on or off.',
     '- lookup: they want something you would have to look up online: weather ("do I need an umbrella"), news, sports scores, prices, store hours, what is happening, or facts about the world you are not sure of. Write question as a clean, self-contained version of what they asked, keeping places, names and times ("what\'s the weather" -> "What is the weather right now?").',
     '- other: anything else: small talk ("how are you", "what\'s up"), a question, a joke, or too garbled to tell.',
     'For remember: write memory as one short, clear sentence in first person, as the user would write it in a notebook ("My keys are in the blue drawer."). Fix obvious mishearings when the meaning is clear (e.g. "the blew draw" -> "the blue drawer"). Keep names, numbers and codes exactly. Turn relative times into what they mean without inventing a date ("tomorrow at noon" stays "tomorrow at noon"). Never add facts that were not said. If the content is too garbled to understand, use intent other.',
@@ -122,13 +124,14 @@ export async function understand({ apiKey, model, transcript, name, now = Date.n
     apiKey, model, system, user, fetchImpl,
     format: { type: 'json_schema', schema: UNDERSTAND_SCHEMA },
   });
-  const empty = { intent: 'other', memory: '', question: '', reminder: '', remind_at: '', focus: '', sentry: '', reply: '' };
+  const empty = { intent: 'other', memory: '', question: '', reminder: '', remind_at: '', focus: '', sentry: '', posture: '', reply: '' };
   let out;
   try { out = JSON.parse(text); } catch { return empty; }
-  let intent = ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'lookup'].includes(out.intent) ? out.intent : 'other';
+  let intent = ['remember', 'recall', 'remind', 'agenda', 'focus', 'sentry', 'posture', 'lookup'].includes(out.intent) ? out.intent : 'other';
   const focus = FOCUS_COMMANDS.includes(out.focus) ? out.focus : '';
   const sentry = ['on', 'off'].includes(out.sentry) ? out.sentry : '';
-  if ((intent === 'focus' && !focus) || (intent === 'sentry' && !sentry)) intent = 'other';
+  const posture = ['on', 'off'].includes(out.posture) ? out.posture : '';
+  if ((intent === 'focus' && !focus) || (intent === 'sentry' && !sentry) || (intent === 'posture' && !posture)) intent = 'other';
   return {
     intent,
     memory: cleanText(out.memory, MAX_MEMORY_CHARS),
@@ -137,6 +140,7 @@ export async function understand({ apiKey, model, transcript, name, now = Date.n
     remind_at: String(out.remind_at ?? '').trim(),
     focus,
     sentry: intent === 'sentry' ? sentry : '',
+    posture: intent === 'posture' ? posture : '',
     reply: intent === 'other' ? cleanText(out.reply, MAX_ANSWER_CHARS) : '',
   };
 }

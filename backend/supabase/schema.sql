@@ -58,6 +58,7 @@ create table public.settings (
   posture_delay_s  smallint not null default 5  check (posture_delay_s between 1 and 120),  -- slouch must last this long
 
   -- Feature toggles
+  posture_enabled  boolean not null default true,    -- posture checks (migration 008)
   sentry_enabled   boolean not null default false,
   quack_enabled    boolean not null default true,
   sign_enabled         boolean not null default true,   -- Sign to Duck (ASL -> speech)

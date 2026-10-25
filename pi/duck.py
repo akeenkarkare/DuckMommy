@@ -56,7 +56,7 @@ from sounds.led import AlertLED                             # noqa: E402
 DEFAULT_SETTINGS = {
     "volume": 70, "posture_message": "Sit up straight!", "sentry_message": "Who goes there?",
     "presence_message": "Welcome back!", "posture_severity": 50, "posture_delay_s": 5,
-    "sentry_enabled": False, "quack_enabled": True, "sign_enabled": True, "sound_alerts_enabled": True,
+    "posture_enabled": True, "sentry_enabled": False, "quack_enabled": True, "sign_enabled": True, "sound_alerts_enabled": True,
     "coach_enabled": True, "coach_interval_min": 25, "coach_tone": "coach",
 }
 # coach lines that answer something you just asked for (by voice, sign or dashboard): never held back
@@ -65,6 +65,10 @@ IDLE_CAMERA_FPS = 3       # camera-only presence/sentry while away
 ULTRASONIC_HZ = 10
 STATUS_EVERY_S = 5        # one-line heartbeat so you can see it working
 IDLE_AWAY_AFTER_S = 300   # after the 5-min "zoned out?" nudge, this much more stillness = away
+# Sentry turns on this long after the command ("hey duck, sentry mode on": counted from when you
+# finished saying it; dashboard toggle: from when the setting arrives). Then the desk counts as empty,
+# so anyone the camera still sees is a possible intruder, even if they never left.
+ARM_DELAY_S = 10
 
 
 def log(msg: str):
@@ -88,6 +92,8 @@ class Duck:
         # or sentry off). Meanwhile no welcome, no coach brief, no posture log and no "hey duck".
         self.intruder = False
         self._disarmed = False     # set by on_settings (sentry turned off), handled by the main loop
+        self._arming = False       # set by on_settings (sentry turned on), handled by the main loop
+        self._arm_at = None        # exit delay running: sentry arms at this monotonic time
         self._last_alert = float("-inf")
         self._held: list[str] = []
         self._held_lock = threading.Lock()
@@ -95,6 +101,7 @@ class Duck:
         self.coach = Coach(self.settings)
         self.coach_lock = threading.Lock()   # touched by the main loop and the relay thread
         self.writer = LineWriter(nudge_url, token, self.settings)
+        self.talk = None           # memory/talk.py, for when the last voice command ended
         self.uplink = (Uplink(relay, token, self.on_settings, self.on_command, self.on_agenda)
                        if relay and token else None)
         if not self.uplink:
@@ -124,8 +131,13 @@ class Duck:
 
     # ── relay ───────────────────────────────────────────────────────────────
     def on_settings(self, s: dict):
+        was_on = bool(self.settings.get("sentry_enabled"))
         self.settings.update(s)
         log(f"settings from dashboard: {json.dumps(s)}")
+        if self.settings.get("sentry_enabled") and not was_on:
+            self._arming = True     # the main loop starts the exit delay if someone is at the desk
+        if not self.settings.get("sentry_enabled"):
+            self._arming, self._arm_at = False, None
         if self.intruder and not self.settings.get("sentry_enabled"):
             self._disarmed = True   # "It's me" on the dashboard (or sentry off): welcome them properly
         self.voice.prefetch([self.settings.get(k) for k in ("posture_message", "sentry_message", "presence_message")])
@@ -222,9 +234,9 @@ class Duck:
         if not WakeWord.available():
             return None
         from memory.talk import TalkToDuck
-        talk = TalkToDuck(WakeWord(), self.voice, self.voice_url, self.env.get("DUCK_TOKEN"),
-                          on_listening=lambda on: self.led.show("listening" if on else "heard"),
-                          present=lambda: self.at_desk, on_turn=self.on_turn)
+        talk = self.talk = TalkToDuck(WakeWord(), self.voice, self.voice_url, self.env.get("DUCK_TOKEN"),
+                                      on_listening=lambda on: self.led.show("listening" if on else "heard"),
+                                      present=lambda: self.at_desk, on_turn=self.on_turn)
         log('talk to duck: "hey duck, remember ...", "what did I tell you ...?", "remind me in 5 days to ...", '
             '"what\'s on my calendar?", "let\'s lock in"')
         return talk.threaded()
@@ -322,6 +334,7 @@ class Duck:
         motion = MotionDetector()      # stillness at the desk (coach "zoned out?" + idle-away)
         idle_away = False              # marked away for not moving; wakes on camera motion
         slouches = 0                   # this sitting, for the coach
+        posture_paused = False         # posture_enabled went off: the judge was reset once
 
         def welcome(now):
             nonlocal slouches
@@ -340,7 +353,7 @@ class Duck:
             value = {"present": ev == "arrive", "distance_cm": None if distance is None else round(distance)}
             if reason:
                 value["reason"] = reason
-            if ev == "arrive" and self.settings.get("sentry_enabled"):
+            if ev == "arrive" and self.settings.get("sentry_enabled") and self._arm_at is None:
                 self.intruder = True
                 value["sentry"] = True
                 self.emit("presence", value)
@@ -377,6 +390,21 @@ class Duck:
                         log("sentry off: it's you")
                         if presence.present:
                             welcome(now)
+                if self._arming:   # sentry just turned on: it starts ARM_DELAY_S after the command
+                    self._arming = False
+                    said = self.talk.said_at if self.talk else None
+                    start = said if said is not None and 0 <= now - said < 30 else now   # by voice: when you said it
+                    self._arm_at = start + ARM_DELAY_S
+                    log(f"sentry on: arming in {max(0.0, self._arm_at - now):.0f} s")
+                if self._arm_at is not None and now >= self._arm_at:
+                    self._arm_at = None
+                    if presence.present or idle_away:
+                        # the desk counts as empty from now on; whoever the camera still sees "arrives"
+                        # 1.5 s later as a possible intruder
+                        presence.force_away()
+                        idle_away = False
+                        on_presence("leave", None, reason="armed")
+                    log("sentry armed")
                 distance = self.sonar.distance_cm() if self.sonar else None
                 if self.sonar and not idle_away:
                     ev = presence.update_distance(now, distance)
@@ -384,7 +412,8 @@ class Duck:
                         on_presence(ev, distance)
 
                 # Asleep in the chair isn't an intruder: no sentry while idle-away.
-                sentry_on = not presence.present and not idle_away and self.settings.get("sentry_enabled", False)
+                sentry_on = (not presence.present and not idle_away and self._arm_at is None
+                             and self.settings.get("sentry_enabled", False))
                 if sentry_on and self.wake == "ultrasonic" and umotion.update(distance):
                     self.act(watch.trigger(now, distance, "ultrasonic"))
 
@@ -410,7 +439,12 @@ class Duck:
                             log("movement: waking up")
                     elif presence.present and not self.intruder:
                         motion.update(now, rgb)
-                        posture = judge.update(now, points)
+                        if self.settings.get("posture_enabled", True):
+                            posture = judge.update(now, points)
+                            posture_paused = False
+                        else:   # posture checks off (dashboard / "hey duck, posture off")
+                            posture = [] if posture_paused else judge.reset()   # close out a slouch; recalibrate when back on
+                            posture_paused = True
                         # first prompt of each slouch (reminders carry a longer slouch_duration_s)
                         first = self.settings.get("posture_delay_s", 5) + 1
                         slouches += sum(1 for a in posture if a[0] == "event" and a[2].get("state") == "slouch"
