@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { AlertIcon, CameraIcon, CloseIcon } from './Icons';
 
 // "Possible intruder" pop-up for a confirmed sentry event: alarm beeps, a flashing tab title and,
 // when the browser allows it, a desktop notification. Watch feed opens the live view;
@@ -28,7 +29,7 @@ export function raiseIntruderAlarm() {
   } catch { /* no audio until the page has been clicked once */ }
   if (desktopAlertsState() === 'granted') {
     try {
-      const n = new Notification('🚨 Possible intruder at your desk', {
+      const n = new Notification('Possible intruder at your desk', {
         body: 'The duck spotted someone while sentry mode is on. Open the dashboard to watch the feed.',
         tag: 'duck-sentry',
         requireInteraction: true,
@@ -43,7 +44,7 @@ export default function IntruderAlert({ alert, onWatch, onMine, onDismiss }) {
     if (!alert) return;
     const original = document.title;
     let flip = false;
-    const id = setInterval(() => { flip = !flip; document.title = flip ? '🚨 Intruder?' : original; }, 1000);
+    const id = setInterval(() => { flip = !flip; document.title = flip ? 'Intruder?' : original; }, 1000);
     return () => { clearInterval(id); document.title = original; };
   }, [alert]);
 
@@ -54,20 +55,20 @@ export default function IntruderAlert({ alert, onWatch, onMine, onDismiss }) {
   if (alert.compact) {
     return (
       <div className="intruder-banner glass" role="status">
-        <span>🚨 Possible intruder · {at}{night}</span>
+        <span className="row" style={{ gap: 8 }}><AlertIcon /> Possible intruder · {at}{night}</span>
         <button className="btn" onClick={onMine}>It's me</button>
-        <button className="btn icon" aria-label="Dismiss" onClick={onDismiss}>✕</button>
+        <button className="btn icon" aria-label="Dismiss" onClick={onDismiss}><CloseIcon /></button>
       </div>
     );
   }
   return (
     <div className="intruder-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="intruder-title">
       <div className="intruder glass">
-        <div className="intruder-icon" aria-hidden>🚨</div>
+        <div className="intruder-icon" aria-hidden><AlertIcon size={40} /></div>
         <h2 id="intruder-title">Possible intruder at your desk</h2>
         <p>The duck spotted someone at {at}{night} while sentry mode is on.</p>
         <div className="row">
-          <button className="btn primary" onClick={onWatch}>📷 Watch feed</button>
+          <button className="btn primary" onClick={onWatch}><CameraIcon /> Watch feed</button>
           <button className="btn" onClick={onMine}>It's me · turn sentry off</button>
         </div>
         <button className="btn link" onClick={onDismiss}>Dismiss</button>

@@ -10,6 +10,7 @@ import { desktopAlertsState } from './IntruderAlert';
 import { RangeField, SelectField, TextField, Toggle } from './Controls';
 import { normalizePhone, PHONE_HINT } from '@/lib/phone';
 import { supabase } from '@/lib/supabase';
+import { BellIcon, CalendarIcon, CheckIcon, CupIcon, DoorIcon, DotIcon, DuckIcon, EyeIcon, HandIcon, LinkOutIcon, MegaphoneIcon, PhoneIcon, PinIcon, SirenIcon, SpeakerIcon, StepsIcon, TargetIcon } from './Icons';
 
 const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 const ago = (ts, now) => {
@@ -17,11 +18,11 @@ const ago = (ts, now) => {
   return s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`;
 };
 const SOUND = {
-  doorbell: ['🚪', 'Doorbell / knock', 'fast blink'],
-  phone: ['📞', 'Phone ringing', 'slow pulse'],
-  alarm: ['🚨', 'Alarm', 'strobe'],
-  notification: ['🔔', 'Notification', 'three blinks'],
-  calling: ['📣', 'Someone calling', 'long glows'],
+  doorbell: [DoorIcon, 'Doorbell / knock', 'fast blink'],
+  phone: [PhoneIcon, 'Phone ringing', 'slow pulse'],
+  alarm: [SirenIcon, 'Alarm', 'strobe'],
+  notification: [BellIcon, 'Notification', 'three blinks'],
+  calling: [MegaphoneIcon, 'Someone calling', 'long glows'],
 };
 
 // profiles.phone: the number sentry iMessages go to. Read and saved straight to the user's own
@@ -72,7 +73,7 @@ function DesktopAlerts() {
   useEffect(() => setState(desktopAlertsState()), []);
   if (state === 'granted') return <p className="hint">Desktop alerts are on for this browser.</p>;
   if (state === 'default') return (
-    <button className="btn" onClick={() => Notification.requestPermission().then(setState)}>🔔 Turn on desktop alerts</button>
+    <button className="btn" onClick={() => Notification.requestPermission().then(setState)}><BellIcon /> Turn on desktop alerts</button>
   );
   if (state === 'insecure') return <p className="hint">Intruder alerts pop up here with a beep. Desktop notifications need https, so they're off on this address.</p>;
   if (state === 'denied') return <p className="hint">Desktop alerts are blocked in this browser's site settings; you'll still get the pop-up here.</p>;
@@ -112,7 +113,7 @@ function CameraPanel({ events, now, windowMs, s, watch, video, canCommand, liveR
           <ul className="list">
             {sentries.map((e, i) => (
               <li key={`${e.ts}-${i}`}>
-                <span><span className="icon">{e.value?.person_confirmed ? '🕵️' : '👣'}</span>
+                <span><span className="icon">{e.value?.person_confirmed ? <EyeIcon /> : <StepsIcon />}</span>
                   {e.value?.person_confirmed ? 'Person spotted' : 'Motion only'}{e.value?.night ? ' · night' : ''}</span>
                 <span className="time">{ago(e.ts, now)}</span>
               </li>
@@ -136,7 +137,7 @@ function PettingPanel({ events, now, s, send, canCommand, duck }) {
       <div className="row">
         <button className="btn primary" disabled={!canCommand}
           onClick={() => { send({ type: 'command', command: { type: 'quack' } }); duck.react({ type: 'quack' }); }}>
-          🦆 Make it quack
+          <DuckIcon /> Make it quack
         </button>
         {!canCommand && <span className="hint">Duck offline</span>}
       </div>
@@ -148,7 +149,7 @@ function PettingPanel({ events, now, s, send, canCommand, duck }) {
       {pats.length > 0 && (
         <ul className="list">
           {pats.slice(-5).reverse().map((e, i) => (
-            <li key={`${e.ts}-${i}`}><span><span className="icon">✋</span>{e.value?.touch_ms} ms press</span><span className="time">{clock(e.ts)}</span></li>
+            <li key={`${e.ts}-${i}`}><span><span className="icon"><HandIcon /></span>{e.value?.touch_ms} ms press</span><span className="time">{clock(e.ts)}</span></li>
           ))}
         </ul>
       )}
@@ -167,10 +168,10 @@ function MicrophonePanel({ events, now, s }) {
         {sounds.length === 0 ? <p className="empty">All quiet.</p> : (
           <ul className="list">
             {sounds.map((e, i) => {
-              const [icon, name, led] = SOUND[e.value?.kind] ?? ['🔊', e.value?.label, 'blink'];
+              const [Icon, name, led] = SOUND[e.value?.kind] ?? [SpeakerIcon, e.value?.label, 'blink'];
               return (
                 <li key={`${e.ts}-${i}`}>
-                  <span><span className="icon">{icon}</span>{name} <span className="hint">· LED {led}</span></span>
+                  <span><span className="icon"><Icon /></span>{name} <span className="hint">· LED {led}</span></span>
                   <span className="time">{ago(e.ts, now)}</span>
                 </li>
               );
@@ -181,8 +182,8 @@ function MicrophonePanel({ events, now, s }) {
       <div className="section">
         <h3>LED patterns</h3>
         <ul className="list">
-          {Object.entries(SOUND).map(([k, [icon, name, led]]) => (
-            <li key={k}><span><span className="icon">{icon}</span>{name}</span><span className="time">{led}</span></li>
+          {Object.entries(SOUND).map(([k, [Icon, name, led]]) => (
+            <li key={k}><span><span className="icon"><Icon /></span>{name}</span><span className="time">{led}</span></li>
           ))}
         </ul>
       </div>
@@ -190,7 +191,7 @@ function MicrophonePanel({ events, now, s }) {
   );
 }
 
-const QUICK = ['Hello!', 'Time for a break 🧘', 'Great posture!', 'Drink some water', 'Quack quack'];
+const QUICK = ['Hello!', 'Time for a break', 'Great posture!', 'Drink some water', 'Quack quack'];
 
 function VoicePanel({ s, send, canCommand, duck, lastAck, now }) {
   const [text, setText] = useState('');
@@ -245,8 +246,8 @@ const when = (ms, now, allDay) => {
 };
 
 const FOCUS_BUTTONS = [
-  ['start_focus', '🎯 Start focus', 'primary'], ['more_time', '+10 min'], ['time_left', 'Time left?'],
-  ['break', '☕ Break'], ['finish', '✓ Done'],
+  ['start_focus', <><TargetIcon /> Start focus</>, 'primary'], ['more_time', '+10 min'], ['time_left', 'Time left?'],
+  ['break', <><CupIcon /> Break</>], ['finish', <><CheckIcon /> Done</>],
 ];
 const TONES = [['gentle', 'Gentle: sweet bestie'], ['coach', 'Coach: hype + a little roast'], ['savage', 'Savage: full Gen Z roast']];
 
@@ -276,7 +277,7 @@ function FocusPanel({ events, allEvents, now, s, send, canCommand, agenda }) {
         {lines.length === 0 ? <p className="empty">Nothing yet. It checks in while you work and reminds you before things are due.</p> : (
           <ul className="list">
             {lines.map((e, i) => (
-              <li key={`${e.ts}-${i}`}><span><span className="icon">🦆</span>{e.value?.text}</span><span className="time">{ago(e.ts, now)}</span></li>
+              <li key={`${e.ts}-${i}`}><span><span className="icon"><DuckIcon /></span>{e.value?.text}</span><span className="time">{ago(e.ts, now)}</span></li>
             ))}
           </ul>
         )}
@@ -293,7 +294,7 @@ function FocusPanel({ events, allEvents, now, s, send, canCommand, agenda }) {
         <p className="hint" style={{ margin: 0 }}>Tap your phone on the tag on its back. iOS opens the Focus shortcut and blocks distracting apps.</p>
         {taps.length > 0 && (
           <ul className="list">
-            {taps.map((e, i) => <li key={`${e.ts}-${i}`}><span><span className="icon">🎯</span>Tag tapped</span><span className="time">{ago(e.ts, now)}</span></li>)}
+            {taps.map((e, i) => <li key={`${e.ts}-${i}`}><span><span className="icon"><TargetIcon /></span>Tag tapped</span><span className="time">{ago(e.ts, now)}</span></li>)}
           </ul>
         )}
       </div>
@@ -328,7 +329,7 @@ function GoogleCalendar({ agenda, send, connected, notice }) {
   if (g.connected) {
     return (
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <span><span className="icon">🟢</span>Google Calendar{g.email ? ` · ${g.email}` : ''}{g.calendars ? <span className="hint"> · {g.calendars} calendar{g.calendars > 1 ? 's' : ''}</span> : null}</span>
+        <span><span className="icon"><DotIcon color="var(--good)" /></span>Google Calendar{g.email ? ` · ${g.email}` : ''}{g.calendars ? <span className="hint"> · {g.calendars} calendar{g.calendars > 1 ? 's' : ''}</span> : null}</span>
         <button className="chip" disabled={!connected} onClick={() => send({ type: 'google_disconnect' })}>Disconnect</button>
       </div>
     );
@@ -355,7 +356,7 @@ function CalendarPanel({ now, s, send, agenda, connected, canCommand, googleNoti
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <span className="hint">{sources ? `${sources} calendar source${sources > 1 ? 's' : ''}${fetched ? ` · updated ${fetched}` : ''}` : 'No calendars yet'}</span>
         <span className="row" style={{ gap: 6 }}>
-          <button className="chip" disabled={!canCommand || !upcoming.length} onClick={() => send({ type: 'say_agenda' })}>🔊 Read my day</button>
+          <button className="chip" disabled={!canCommand || !upcoming.length} onClick={() => send({ type: 'say_agenda' })}><SpeakerIcon size={16} /> Read my day</button>
           <button className="chip" disabled={!connected} onClick={() => send({ type: 'agenda_refresh' })}>↻ Refresh</button>
         </span>
       </div>
@@ -367,14 +368,14 @@ function CalendarPanel({ now, s, send, agenda, connected, canCommand, googleNoti
             {upcoming.map((i) => (
               <li key={i.id}>
                 <a href={i.link ?? GOOGLE_CALENDAR} target="_blank" rel="noreferrer" title="Open in Google Calendar">
-                  <span><span className="icon">{i.kind === 'due' ? '📌' : '📅'}</span>{i.title}{i.kind === 'due' && <span className="hint"> · due</span>}</span>
+                  <span><span className="icon">{i.kind === 'due' ? <PinIcon /> : <CalendarIcon />}</span>{i.title}{i.kind === 'due' && <span className="hint"> · due</span>}</span>
                   <span className="time">{when(i.start, now, i.all_day)}</span>
                 </a>
               </li>
             ))}
           </ul>
         )}
-        <a className="btn" href={GOOGLE_CALENDAR} target="_blank" rel="noreferrer">Open Google Calendar ↗</a>
+        <a className="btn" href={GOOGLE_CALENDAR} target="_blank" rel="noreferrer">Open Google Calendar <LinkOutIcon size={15} /></a>
         <p className="hint" style={{ margin: 0 }}>Events: the duck says it out loud 5 minutes before and again when it starts. Deadlines: reminders 24 h, 3 h, 1 h and 15 min before, and when you sit down.</p>
       </div>
       <div className="section">

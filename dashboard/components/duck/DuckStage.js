@@ -213,15 +213,15 @@ export default function DuckStage() {
         case 'pat': case 'quack': squish(); bubble('Quack!', 1400); break;
         case 'posture':
           if (v.state === 'slouch') { c.shake = 1; bubble(e.message || 'Sit up straight!'); talk(e.message); }
-          else { hop(1.6); bubble('Nice posture ✨', 1800); }
+          else { hop(1.6); bubble('Nice posture', 1800); }
           break;
         case 'sign': talk(v.text); bubble(`“${v.text}”`, 4500); break;
-        case 'sound': ripple(); bubble(`🔔 ${e.label || v.label || v.kind}`, 2600); break;
+        case 'sound': ripple(); bubble(`Heard: ${e.label || v.label || v.kind}`, 2600); break;
         case 'sentry': if (v.person_confirmed) { c.lens = 1; c.shake = 0.6; bubble(e.message || 'Who goes there?'); } break;
         case 'presence': if (v.present) { hop(); bubble(e.message || 'Welcome back!'); } break;
-        case 'focus': hop(2); bubble('Focus mode 🎯', 2200); break;
+        case 'focus': hop(2); bubble('Focus mode', 2200); break;
         case 'say': talk(v.text); bubble(v.text, 3500); break;
-        case 'calendar': talk(v.text); bubble(`📅 ${v.text}`, 5000); break;
+        case 'calendar': talk(v.text); bubble(v.text, 5000); break;
         case 'whistle': acc.blow(); ripple(); break;   // coach: focus session started
         case 'wink': c.blink = 0.45; c.nextBlink = performance.now() / 1000 + 3; break;   // eyes[0] is the only eye that blinks
         default: break;
@@ -478,7 +478,6 @@ export default function DuckStage() {
 
       c.lens = Math.max(0, c.lens - dt * 0.35);
       duck.lensMaterial.emissiveIntensity = c.lens * 3;   // whole lens glows red on a sentry alert
-      duck.recMaterial.emissiveIntensity = f === 'camera' ? 2 + 1.5 * Math.sin(t * 5) : 0.6;   // 'recording' light
       c.ring = Math.max(0, c.ring - dt * 0.9);
       duck.ringMaterial.emissiveIntensity = 0.25 + c.ring * 2.5 + (f === 'petting' ? 0.6 + 0.4 * Math.sin(t * 3) : 0);
 

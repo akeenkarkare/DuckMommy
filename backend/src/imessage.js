@@ -8,7 +8,7 @@
 // Without credentials, a number, or the package, it stays off.
 
 // Same words as dashboard/components/IntruderAlert.js raiseIntruderAlarm(): keep the two in sync.
-export const SENTRY_TITLE = '🚨 Possible intruder at your desk';
+export const SENTRY_TITLE = 'Possible intruder at your desk';
 export const SENTRY_BODY = 'The duck spotted someone while sentry mode is on. Open the dashboard to watch the feed.';
 export const sentryText = () => `${SENTRY_TITLE}\n${SENTRY_BODY}`;
 

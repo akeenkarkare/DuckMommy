@@ -27,7 +27,7 @@ function describe({ type, value: v }) {
     }
     case 'focus': return 'NFC tag tapped';
     case 'sign': return `Signed: “${v.text}”`;
-    case 'calendar': return `🔔 ${v.text}`;
+    case 'calendar': return v.text;
     case 'sound': return `${SOUND_LABELS[v.kind] ?? v.label} · ${Math.round(v.score * 100)}% sure · LED on`;
     case 'memory':
       if (v.action === 'saved') return 'Saved a note to your nest';
@@ -35,7 +35,7 @@ function describe({ type, value: v }) {
       if (v.action === 'reminder_due') return `Reminded you: ${v.text}${v.late ? ' (you were away)' : ''}`;
       if (v.action === 'agenda' || v.action === 'lookup') return `Answered: “${v.question}”`;
       return 'Answered a question from your notes';
-    case 'coach': return `🦆 “${v.text}”${v.source === 'template' ? ' · offline line' : ''}`;
+    case 'coach': return `“${v.text}”${v.source === 'template' ? ' · offline line' : ''}`;
     default: return JSON.stringify(v);
   }
 }

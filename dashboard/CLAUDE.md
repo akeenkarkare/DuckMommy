@@ -37,7 +37,7 @@ Web frontend. Each logged-in user sees and controls only their own duck. Root ru
 ## Landing page (`/welcome`) — scroll-driven duck
 Logged-out visitors land here (`app/page.js` redirects to `/welcome`, not `/login`). Laptop only; the narrow-screen rules exist but aren't designed for.
 - Files: `app/welcome/page.js` → `components/Landing.js`; styles under `/* ── landing (/welcome)` in `app/globals.css`.
-- The page is one scroll container (`main.landing`, absolutely positioned over the fixed stage). Each `<section data-section="…">` is ≥100vh. The section crossing the middle of the screen is `active`, and `SECTIONS[active].stage` sets the duck:
+- The page is one ordinary scroll container (`main.landing`, absolutely positioned over the fixed stage; wheel, trackpad, touch, scrollbar). While it's mounted `body.landing-on` lifts the hotspot labels above it so they stay clickable. Each `<section data-section="…">` is ≥100vh. The section crossing the middle of the screen is `active`, and `SECTIONS[active].stage` sets the duck:
   | Section | Stage | Duck reaction on first arrival |
   |---|---|---|
   | hero | close-up (`setStage(null)`, path → hero mode, follows cursor, winks) | “Hiii 👋” after 1.5 s |
@@ -55,9 +55,10 @@ Logged-out visitors land here (`app/page.js` redirects to `/welcome`, not `/logi
   - `p` = progress through the active section (−0.5…0.5): adds up to ±0.35 rad of yaw and a little pitch, so the duck keeps turning while you scroll inside a section.
   - `v` = scroll velocity (px, decays with `exp(-6·dt)`): the duck leans into the scroll (`bob.rotation.x/z`, clamped) and splashes the water when you scroll fast (rate-limited to one splash per 0.45 s).
   - Off under `prefers-reduced-motion`. Landing clears `bridge.current.scroll` on unmount so the dashboard is unaffected.
-- Copy choreography (CSS): each section’s column rises in once (`.sec.in`, staggered 80 ms), headlines drift against the scroll (`translate: 0 calc(var(--p) * -60px)`), demo blocks drift the other way (+40px). `--p` is set per section by the same scroll handler.
-- Hero: eyebrow, `.mega` headline “Sit up straight / bestie.” (yellow word + beak-orange underline swipe), lede, one primary CTA + text link, and a bottom **event ticker** of the real event types (posture, pat, sign, sound, memory, coach, calendar, presence, sentry).
-- Interactive bits: personality switch (Gentle / Coach / Savage, the duck says each line), LED pattern tiles that actually blink in each sound’s pattern, ASL gloss demo cycling real phrases from `pi/asl/phrases.json`, a “hey duck” Nest chat, event-log style readouts.
+- Copy choreography (CSS): each section’s column rises in once (`.sec.in`, staggered 80 ms). Nothing inside a card drifts (it squeezed text out of the box).
+- Each section also dresses the duck (`tone` in `SECTIONS`: hero/signs/end savage, overview/petting/focus coach, camera/microphone/nest gentle; Voice = the switch).
+- Hero: `.mega` headline “Sit up straight / bestie.” on a light wash (dark ink, orange word, yellow underline swipe), lede (TODO: the elevator pitch), one primary CTA + text link. No ticker, no code readouts.
+- Interactive bits: personality switch (Gentle / Coach / Savage, the duck says each line and changes outfit), LED pattern tiles that actually blink in each sound’s pattern, ASL gloss demo cycling real phrases from `pi/asl/phrases.json`, a “hey duck” Nest chat.
 - Header: brand, a part nav (hidden on hero/end, highlights the active part), scene picker, Log in.
 
 ## First-visit tour (`components/Tour.js`)
@@ -84,6 +85,7 @@ Done (Oct 25):
 - The greeting uses `user_metadata.display_name` right away.
 
 ## Decisions log (cont.)
+- 2026-10-25 (Sara's review): no emoji anywhere in the UI; icons are drawn line SVGs in `components/Icons.js`. Surfaces are light “paper” (`--paper`, dark ink), not dark translucent boxes; landing cards get one of five tints. The camera's red “recording” LED is gone from the model (no LED on the duck).
 - 2026-10-25: Keep the 3D duck as the navigation; no bento rebuild. Laptop-only for judging.
 - 2026-10-25: Logged-out `/` goes to the `/welcome` landing page; the landing reuses the persistent stage instead of a separate hero.
 

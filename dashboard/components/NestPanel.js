@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ForgetIcon, NestIcon, RefreshIcon, SOURCE_ICON, TypedIcon } from './NestIcons';
+import { ClockIcon } from './Icons';
 
 const MAX_LEN = 500;   // matches the check on public.memories.text
 const SOURCE_LABEL = { voice: 'Said', sign: 'Signed', typed: 'Typed' };
@@ -85,7 +86,7 @@ function Reminders({ allEvents, now }) {
         <ul className="list nest-list">
           {list.map((r) => (
             <li key={r.id}>
-              <span className="nest-note"><span aria-hidden>⏰</span><span>{r.text}</span></span>
+              <span className="nest-note"><span className="nest-src"><ClockIcon size={16} /></span><span>{r.text}</span></span>
               <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
                 <span className="time">{dueStamp(Date.parse(r.due_at), now)}</span>
                 <button className="btn icon nest-forget" aria-label={`Cancel reminder “${r.text}”`} title="Cancel" onClick={() => cancel(r.id)}><ForgetIcon /></button>

@@ -474,3 +474,95 @@ a.btn { color: inherit; text-decoration: none; }
   .sec .col, .sec-overview .col { margin-left: 0; width: 100%; }
   .ticker { display: none; }
 }
+
+/* ══ light "paper" surfaces (Oct 25 review: no dark translucent boxes, legible on every scene) ══
+   Everything that sits on top of the 3D scene is warm paper with dark ink. Tokens are redefined
+   on each surface, so the components inside (lists, tiles, fields, chips) follow automatically. */
+:root {
+  --paper: rgba(255, 252, 243, 0.9);
+  --paper-solid: #fffcf3;
+  --ink: #1d1708;
+  --ink-2: #4b4330;
+  --ink-3: #7a705a;
+  --line: rgba(70, 52, 10, 0.14);
+  --amber: #a5620a;   /* duck yellow is too light for text on paper */
+  --tint-butter: #fff4cf; --tint-peach: #ffe6d3; --tint-sky: #dff1fa; --tint-mint: #def5e6; --tint-lilac: #ece6fb;
+}
+:is(.glass, .panel, .duck-label, .tour-card, .scene-menu, .caption, .hint-float, .brand, .landing-brand, .auth-brand) {
+  --text-primary: var(--ink); --text-secondary: var(--ink-2); --text-muted: var(--ink-3);
+  --border: var(--line); --surface-2: rgba(70, 52, 10, 0.05); --grid: rgba(70, 52, 10, 0.09);
+  color: var(--ink); color-scheme: light;
+}
+.glass, .duck-label, .hint-float, .caption {
+  background: var(--paper); border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 10px 30px rgba(8, 28, 40, 0.16), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+.scene-menu, .tour-card { background: var(--paper-solid); }
+.brand, .landing-brand, .auth-brand { padding: 6px 14px 6px 8px; border-radius: 999px; background: var(--paper); box-shadow: 0 8px 24px rgba(8, 28, 40, 0.14); text-shadow: none !important; }
+.brand h1, .brand .who { text-shadow: none; }
+.brand .who { color: var(--ink-3); }
+
+/* accents that were yellow-on-dark become amber-on-paper */
+:is(.panel-head, .sec, .tour-card) .kicker, .tour-count, .log td.type, .auth-switch a, .gloss, .nest-src { color: var(--amber) !important; }
+.panel-head .kicker { color: var(--amber); }
+.caption-kicker { background: var(--amber); color: #fff; }
+.duck-label:hover, .duck-label:focus-visible { background: #fff3c4; border-color: rgba(165, 98, 10, 0.45); }
+.duck-leaders polyline { stroke: rgba(255, 255, 255, 0.85); }
+
+/* controls on paper */
+:is(.glass, .panel, .tour-card) :is(.input, .field input[type="text"], .field input[type="email"], .field input[type="password"], .field input[type="number"], .field input[type="tel"]) {
+  background: #fff; border-color: var(--line); color: var(--ink);
+}
+:is(.glass, .panel, .tour-card) .btn:hover:not(:disabled) { background: rgba(70, 52, 10, 0.07); border-color: rgba(70, 52, 10, 0.3); }
+:is(.glass, .panel, .tour-card) .btn.primary:hover:not(:disabled) { background: #ffd666; }
+.btn.primary:disabled { background: transparent; color: var(--amber); border-color: rgba(165, 98, 10, 0.45); opacity: 0.7; }
+.switch input { background: rgba(70, 52, 10, 0.18); }
+.dock button:hover { background: rgba(70, 52, 10, 0.07); }
+.btn.link { color: var(--ink-3); }
+.ico { display: inline-block; flex: none; vertical-align: -3px; }
+.list .icon { display: inline-flex; vertical-align: -3px; color: var(--amber); }
+.nest-src { background: rgba(255, 201, 60, 0.22); }
+.intruder-icon { color: var(--critical); }
+.msg.duck { border: 1px solid var(--line); }
+.chart .bar { fill: #f2b01e; }
+.tooltip { background: var(--paper-solid); color: var(--ink); border-color: var(--line); }
+.auth-sub { color: var(--ink-2); }
+
+/* ── landing: a real scroller, light cards with a tint per section, ink type on a wash ── */
+.landing { pointer-events: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.55) transparent; }
+.landing::-webkit-scrollbar { display: block; width: 8px; }
+.landing::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.55); border-radius: 8px; }
+.landing:focus { outline: none; }
+.landing-on .duck-overlay { z-index: 4; }   /* hotspot labels stay clickable above the scroller */
+.sec .col.glass { background: color-mix(in srgb, var(--tint, var(--paper-solid)) 92%, transparent); padding: 28px; }
+.sec .col p { color: var(--ink-2); }
+.sec-overview { --tint: var(--tint-butter); }
+.sec-camera { --tint: var(--tint-sky); }
+.sec-petting { --tint: var(--tint-peach); }
+.sec-voice { --tint: var(--tint-lilac); }
+.sec-microphone { --tint: var(--tint-mint); }
+.sec-focus { --tint: var(--tint-butter); }
+.sec-signs { --tint: var(--tint-sky); }
+.sec-nest { --tint: var(--tint-peach); }
+.sec-hero::before, .sec-end::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(to left, rgba(255, 249, 232, 0.94) 0%, rgba(255, 249, 232, 0.86) 30%, rgba(255, 249, 232, 0) 58%);
+}
+.sec-hero .col, .sec-end .col { position: relative; }
+.mega { color: var(--ink); text-shadow: none; }
+.mega .yellow { color: #d9580f; }
+.mega .yellow::after { background: var(--duck); }
+.lede { color: var(--ink-2) !important; text-shadow: none; }
+.text-link { color: var(--ink); text-shadow: none; }
+.text-link:hover { color: #d9580f; }
+.scroll-cue { background: var(--paper); border-color: var(--line); color: var(--ink); }
+.demo { display: grid; gap: 10px; padding: 14px; border-radius: 16px; background: rgba(255, 255, 255, 0.7); border: 1px solid var(--line); }
+.seg { background: rgba(70, 52, 10, 0.07); border-color: var(--line); }
+.quote { color: var(--ink) !important; }
+.asl-out { color: var(--ink); }
+.asl-arrow { color: var(--ink-3); }
+.gloss { background: rgba(255, 201, 60, 0.3); }
+.led-tile { background: rgba(255, 255, 255, 0.7); }
+.led-tile:hover, .led-tile.lit { background: rgba(255, 90, 82, 0.1); }
+@media (max-width: 899px) { .sec-hero::before, .sec-end::before { background: linear-gradient(to top, rgba(255, 249, 232, 0.94) 0%, rgba(255, 249, 232, 0.8) 45%, rgba(255, 249, 232, 0) 75%); } }
+a.btn.glass, .landing-head .btn.glass { color: var(--ink); }

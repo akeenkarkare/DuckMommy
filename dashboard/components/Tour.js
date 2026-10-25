@@ -22,13 +22,13 @@ const STEPS = [
     title: 'Every label is a real part',
     text: 'Click Camera for posture, signs and the live view. Each part opens its own drawer.',
     target: () => document.querySelector('.duck-label[data-id="camera"]')?.getBoundingClientRect() ?? null,
-    react: { type: 'posture', value: { state: 'slouch' }, message: 'Like this 😤' },
+    react: { type: 'posture', value: { state: 'slouch' }, message: 'Like this. Sit up.' },
   },
   {
     title: 'Or use the dock',
     text: 'Every part is down here too, plus Calendar, Nest (what you told it to remember) and Activity.',
     target: () => document.querySelector('.dock')?.getBoundingClientRect() ?? null,
-    react: { type: 'say', value: { text: 'Everything’s down here 👇' } },
+    react: { type: 'say', value: { text: 'Everything’s down here.' } },
   },
   {
     title: 'Is it with you?',
@@ -39,7 +39,7 @@ const STEPS = [
     title: 'Talk to it',
     text: 'Say “hey duck, remember…”, “what’s on my calendar tomorrow?” or “let’s lock in”. Or sign HELLO at the camera.',
     target: () => null,
-    react: { type: 'say', value: { text: 'Hey bestie 👋' } },
+    react: { type: 'say', value: { text: 'Hey bestie.' } },
   },
 ];
 

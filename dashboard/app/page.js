@@ -12,9 +12,10 @@ import ScenePicker from '@/components/ScenePicker';
 import IntruderAlert, { raiseIntruderAlarm } from '@/components/IntruderAlert';
 import Tour, { TOUR_KEY } from '@/components/Tour';
 import BrandMark from '@/components/BrandMark';
+import { CloseIcon } from '@/components/Icons';
 
 const CAPTION_MS = 6000;
-const TONE_BADGE = { gentle: '💛 Gentle', coach: '🧢 Coach', savage: '🕶️ Savage' };   // how long a signed sentence stays captioned above the dock
+const TONE_BADGE = { gentle: 'Gentle', coach: 'Coach', savage: 'Savage' };   // how long a signed sentence stays captioned above the dock
 
 function useNow(ms) {
   const [now, setNow] = useState(() => Date.now());
@@ -60,7 +61,7 @@ export default function Dashboard() {
     if (e.type === 'memory') {
       const v = e.value ?? {};
       const text = v.action === 'recall' || v.action === 'agenda' || v.action === 'lookup' ? v.answer
-        : v.action === 'reminder_set' ? `⏰ ${v.text}` : v.action === 'reminder_due' ? `⏰ Time to ${v.text}` : 'Saved to your nest';
+        : v.action === 'reminder_set' ? `Reminder set: ${v.text}` : v.action === 'reminder_due' ? `Time to ${v.text}` : 'Saved to your nest';
       return bridge.current.react({ type: 'say', value: { text } });
     }
     const st = s.settings ?? {};
@@ -99,6 +100,7 @@ export default function Dashboard() {
   // The duck dresses for its personality (cap + whistle, aviators, or nothing).
   const tone = s.settings?.coach_tone;
   useEffect(() => { if (tone) setTone(tone); }, [tone, setTone]);
+  useEffect(() => () => setTone('gentle'), [setTone]);   // logged out / login: the plain duck
 
   const recent = events.filter((e) => e.ts >= now - bufferMs);
 
@@ -111,7 +113,7 @@ export default function Dashboard() {
     const nextDue = agenda.items.find((i) => i.kind === 'due' && i.start > now);
     const session = focusSession(events, now);
     setBadges({
-      camera: posture ? (posture.value?.state === 'slouch' ? 'Slouching 👀' : 'Upright ✓') : 'Posture · Sentry · Signs',
+      camera: posture ? (posture.value?.state === 'slouch' ? 'Slouching' : 'Upright') : 'Posture · Sentry · Signs',
       petting: `${count('pat')} pats · 5 min`,
       voice: s.settings ? `Volume ${s.settings.volume}` : 'What it says',
       microphone: sound ? `Heard: ${sound.value?.label ?? sound.value?.kind}` : 'Listening',
@@ -210,7 +212,7 @@ export default function Dashboard() {
                 <div className="kicker">{panel.kicker}</div>
                 <h2>{panel.title}</h2>
               </div>
-              <button className="btn icon" aria-label="Close" onClick={() => setFocus(null)}>✕</button>
+              <button className="btn icon" aria-label="Close" onClick={() => setFocus(null)}><CloseIcon /></button>
             </div>
             <div className="panel-body" key={focus}>
               <Body events={recent} now={now} windowMs={bufferMs} s={s} send={send} canCommand={canCommand}

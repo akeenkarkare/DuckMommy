@@ -6,16 +6,17 @@ import { supabase } from '@/lib/supabase';
 import { useDuck } from '@/components/duck/DuckContext';
 import ScenePicker from '@/components/ScenePicker';
 import BrandMark from '@/components/BrandMark';
+import { HandIcon, TargetIcon } from '@/components/Icons';
 
 // /welcome: a scroll-driven tour of the duck for logged-out visitors, on the persistent stage.
 // One scroll container (main.landing) over the fixed 3D duck. The section crossing the middle of
 // the screen is `active`; its `stage` sets the duck (mode + focus). See dashboard/CLAUDE.md.
 //
-// The container ignores the pointer (so the duck stays draggable and its labels clickable);
-// wheel and keys over the duck are forwarded to it.
+// The container is an ordinary scroller (wheel, trackpad, touch, scrollbar, keys). While it's
+// mounted, the duck's hotspot labels sit above it (body.landing-on), so they stay clickable.
 
 const TONES = {
-  gentle: 'Hey bestie, maybe roll those shoulders back? No pressure 🌷',
+  gentle: 'Hey bestie, maybe roll those shoulders back? No pressure.',
   coach: 'Shoulders back, chin up. Two more pomodoros. Let’s go.',
   savage: 'You’re folding like a lawn chair. Sit up.',
 };
@@ -40,42 +41,23 @@ const LEDS = [
   { kind: 'calling', label: 'Someone calling', pattern: 'long glows' },
 ];
 
-// The real event types, as the relay sends them.
-const TICKER = [
-  ['posture', '{ state: "slouch", neck_angle_deg: 23 }'],
-  ['pat', '{ touch_ms: 412 }'],
-  ['sign', '{ text: "Hello!" }'],
-  ['sound', '{ kind: "doorbell" }'],
-  ['memory', '{ action: "saved" }'],
-  ['coach', '{ kind: "checkin" }'],
-  ['calendar', '{ text: "In 5 minutes: Lab." }'],
-  ['presence', '{ present: true }'],
-  ['sentry', '{ person_confirmed: true, night: true }'],
-];
-
 // stage: what the duck does while this section is active. react: its reaction on first arrival.
+// tone: the personality it wears there (accessories.js), so the look changes as you scroll;
+// the Voice section wears whatever the switch is on.
 const SECTIONS = [
-  { id: 'hero', stage: null, focus: null, delay: 1500, react: () => [{ type: 'wink' }, { type: 'say', value: { text: 'Hiii 👋' } }] },
-  { id: 'overview', stage: 'dashboard', focus: null },   // the hero -> dashboard change spins it on its own
-  { id: 'camera', part: 'Camera', stage: 'dashboard', focus: 'camera', react: () => [{ type: 'posture', value: { state: 'slouch' }, message: 'Sit up straight 😤' }] },
-  { id: 'petting', part: 'Petting', stage: 'dashboard', focus: 'petting', react: () => [{ type: 'quack' }] },
+  { id: 'hero', tone: 'savage', stage: null, focus: null, delay: 1500, react: () => [{ type: 'wink' }, { type: 'say', value: { text: 'Hiii.' } }] },
+  { id: 'overview', tone: 'coach', stage: 'dashboard', focus: null },   // the hero -> dashboard change spins it on its own
+  { id: 'camera', tone: 'gentle', part: 'Camera', stage: 'dashboard', focus: 'camera', react: () => [{ type: 'posture', value: { state: 'slouch' }, message: 'Sit up straight.' }] },
+  { id: 'petting', tone: 'coach', part: 'Petting', stage: 'dashboard', focus: 'petting', react: () => [{ type: 'quack' }] },
   { id: 'voice', part: 'Voice', stage: 'dashboard', focus: 'voice', react: (tone) => [{ type: 'say', value: { text: TONES[tone] } }] },
-  { id: 'microphone', part: 'Microphone', stage: 'dashboard', focus: 'microphone', react: () => [{ type: 'sound', label: 'Doorbell', value: { kind: 'doorbell' } }] },
-  { id: 'focus', part: 'Focus', stage: 'dashboard', focus: 'focus', react: () => [{ type: 'focus' }] },
-  { id: 'signs', part: 'Signs', stage: 'dashboard', focus: 'camera', react: () => [{ type: 'sign', value: { text: 'Hello!' } }] },
-  { id: 'nest', part: 'Nest', stage: 'dashboard', focus: 'aside', react: () => [{ type: 'say', value: { text: 'Noted 🧠' } }] },
-  { id: 'end', stage: null, focus: null, react: () => [{ type: 'say', value: { text: 'Adopt me 🥺' } }] },
+  { id: 'microphone', tone: 'gentle', part: 'Microphone', stage: 'dashboard', focus: 'microphone', react: () => [{ type: 'sound', label: 'Doorbell', value: { kind: 'doorbell' } }] },
+  { id: 'focus', tone: 'coach', part: 'Focus', stage: 'dashboard', focus: 'focus', react: () => [{ type: 'focus' }, { type: 'whistle' }] },
+  { id: 'signs', tone: 'savage', part: 'Signs', stage: 'dashboard', focus: 'camera', react: () => [{ type: 'sign', value: { text: 'Hello!' } }] },
+  { id: 'nest', tone: 'gentle', part: 'Nest', stage: 'dashboard', focus: 'aside', react: () => [{ type: 'say', value: { text: 'Noted.' } }] },
+  { id: 'end', tone: 'savage', stage: null, focus: null, react: () => [{ type: 'say', value: { text: 'Adopt me.' } }] },
 ];
 const REACT_AFTER_MS = 700;   // after the camera has flown to the part
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-
-function Readout({ lines }) {
-  return (
-    <pre className="readout drift-down" aria-label="Example events">
-      {lines.map(([k, v], i) => <div key={i}><span className="k">{k}</span> {v}</div>)}
-    </pre>
-  );
-}
 
 function AslDemo() {
   const [i, setI] = useState(0);
@@ -85,7 +67,7 @@ function AslDemo() {
   }, []);
   const p = ASL[i];
   return (
-    <div className="asl-demo card drift-down" key={i}>
+    <div className="asl-demo demo" key={i}>
       <div className="glosses">{p.signs.map((g, j) => <span className="gloss" key={g + j} style={{ animationDelay: `${j * 0.18}s` }}>{g}</span>)}</div>
       <div className="asl-arrow" aria-hidden>↓ the duck says</div>
       <div className="asl-out" style={{ animationDelay: `${p.signs.length * 0.18 + 0.2}s` }}>“{p.text}”</div>
@@ -97,7 +79,7 @@ function NestChat({ duck }) {
   const [notes, setNotes] = useState(['my locker code is 427']);
   const [msgs, setMsgs] = useState([
     { me: true, text: 'hey duck, remember my locker code is 427' },
-    { me: false, text: 'Noted 🧠 It’s in your nest.' },
+    { me: false, text: 'Noted. It’s in your nest.' },
   ]);
   const [draft, setDraft] = useState('');
   const logRef = useRef(null);
@@ -107,7 +89,7 @@ function NestChat({ duck }) {
   const reply = (q) => {
     const said = q.replace(/^(hey|ok(ay)?|hi)\s+duck,?\s*/i, '');
     const remember = said.match(/^remember\s+(?:that\s+)?(.+)/i);
-    if (remember) { setNotes((n) => [...n, remember[1]]); return 'Noted 🧠 It’s in your nest.'; }
+    if (remember) { setNotes((n) => [...n, remember[1]]); return 'Noted. It’s in your nest.'; }
     const words = said.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [];
     const hit = notes.findLast((n) => words.some((w) => !['what', 'did', 'tell', 'you', 'the', 'remember', 'whats'].includes(w) && n.toLowerCase().includes(w)));
     return hit ? `You told me ${hit.replace(/^my /, 'your ')}.` : 'I don’t have a note about that, bestie. Did you actually tell me?';
@@ -122,7 +104,7 @@ function NestChat({ duck }) {
     duck.current.react({ type: 'say', value: { text: a } });
   };
   return (
-    <form className="chat card drift-down" onSubmit={send}>
+    <form className="chat demo" onSubmit={send}>
       <div className="chat-log" ref={logRef}>
         {msgs.map((m, i) => <p key={i} className={`msg ${m.me ? 'me' : 'duck'}`}>{m.text}</p>)}
       </div>
@@ -141,7 +123,7 @@ export default function Landing() {
   const secRefs = useRef([]);
   const reacted = useRef(new Set());
   const [active, setActive] = useState(0);
-  const [tone, setTone] = useState('coach');
+  const [tone, setTone] = useState('savage');
   const [lit, setLit] = useState(null);   // LED tile just clicked
   const [loggedIn, setLoggedIn] = useState(false);
   const toneRef = useRef(tone);
@@ -185,31 +167,16 @@ export default function Landing() {
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
 
-    // The container ignores the pointer, so forward the wheel when it's over the duck.
-    const onWheel = (e) => {
-      if (e.ctrlKey || el.contains(e.target)) return;   // over the copy, the browser scrolls it natively
-      el.scrollBy({ top: e.deltaY * (e.deltaMode === 1 ? 32 : e.deltaMode === 2 ? window.innerHeight : 1) });
-    };
-    const onKey = (e) => {
-      if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
-      const H = window.innerHeight;
-      const d = { ArrowDown: 80, ArrowUp: -80, PageDown: H * 0.9, PageUp: -H * 0.9, ' ': e.shiftKey ? -H * 0.9 : H * 0.9 }[e.key];
-      if (e.key === 'Home') { e.preventDefault(); el.scrollTo({ top: 0, behavior: 'smooth' }); }
-      else if (e.key === 'End') { e.preventDefault(); el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }
-      else if (d && !(e.key === ' ' && e.target.closest?.('button, a'))) { e.preventDefault(); el.scrollBy({ top: d, behavior: 'smooth' }); }
-    };
-
     el.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('wheel', onWheel, { passive: true });
-    window.addEventListener('keydown', onKey);
     window.addEventListener('resize', onScroll);
+    document.body.classList.add('landing-on');
+    el.focus({ preventScroll: true });   // arrow keys / space scroll it straight away
     update();
     return () => {
       cancelAnimationFrame(raf);
       el.removeEventListener('scroll', onScroll);
-      window.removeEventListener('wheel', onWheel);
-      window.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onScroll);
+      document.body.classList.remove('landing-on');
       bridge.current.scroll = null;   // the dashboard gets a still duck
       bridge.current.onPick = null;
     };
@@ -220,7 +187,7 @@ export default function Landing() {
     const sec = SECTIONS[active];
     setStage(sec.stage);
     setFocus(sec.focus);
-    if (sec.id === 'voice') dress(toneRef.current);   // the personality switch dresses the duck
+    dress(sec.id === 'voice' ? toneRef.current : sec.tone);   // a different personality as you scroll
     if (!sec.react || reacted.current.has(sec.id)) return;
     const id = setTimeout(() => {
       reacted.current.add(sec.id);
@@ -256,29 +223,23 @@ export default function Landing() {
         </div>
       </header>
 
-      <main className="landing" ref={scrollRef}>
+      <main className="landing" ref={scrollRef} tabIndex={-1}>
         <section {...sec(0)}>
           <div className="col">
-            <p className="eyebrow">A rubber duck with a Raspberry Pi inside</p>
-            <h1 className="mega drift-up">Sit up straight <span className="yellow">bestie.</span></h1>
+            <h1 className="mega">Sit up straight <span className="yellow">bestie.</span></h1>
             <p className="lede">Duck Mommy sits on your desk, watches your posture, reads your ASL signs, guards your stuff while you’re gone, and (lovingly) nags you to lock in.</p>
             <div className="row">
               {cta}
               {!loggedIn && <Link className="text-link" href="/login">I already have one · Log in</Link>}
             </div>
           </div>
-          <div className="ticker" aria-hidden>
-            <div className="ticker-track">
-              {[0, 1].map((n) => TICKER.map(([k, v]) => <span className="tick" key={`${n}-${k}`}><b>{k}</b> {v}</span>))}
-            </div>
-          </div>
-          <button className="scroll-cue" onClick={() => goTo('overview')} aria-label="Scroll to meet the duck">↓</button>
+          <button className="scroll-cue" onClick={() => goTo('overview')} aria-label="Scroll to meet the duck"><span aria-hidden>↓</span></button>
         </section>
 
         <section {...sec(1)}>
           <div className="col glass">
             <p className="kicker">Meet the hardware</p>
-            <h2 className="drift-up">Every part does something.</h2>
+            <h2>Every part does something.</h2>
             <p>A camera eye, a head you can press, a beak that talks, a mic that hears your doorbell, an NFC tag on its back. Click a label to jump to that part.</p>
           </div>
         </section>
@@ -286,45 +247,43 @@ export default function Landing() {
         <section {...sec(2)}>
           <div className="col glass">
             <p className="kicker">Right eye · camera</p>
-            <h2 className="drift-up">It sees you slouch.</h2>
+            <h2>It sees you slouch.</h2>
             <p>OpenCV and MediaPipe on the Pi measure your neck angle. Slouch for a few seconds and it tells you, out loud. Night vision for sentry mode. Video never leaves the duck.</p>
-            <Readout lines={[['posture', '{ state: "slouch", neck_angle_deg: 23 }'], ['presence', '{ present: true }'], ['sentry', '{ person_confirmed: true, night: true }']]} />
           </div>
         </section>
 
         <section {...sec(3)}>
           <div className="col glass">
             <p className="kicker">Top of head · pressure pad</p>
-            <h2 className="drift-up">Boop the snoot.</h2>
+            <h2>Boop the snoot.</h2>
             <p>Press its head and it quacks. Every pat lands on your dashboard, live.</p>
-            <div className="row drift-down">
-              <button className="btn primary" onClick={() => bridge.current.react({ type: 'quack' })}>🫳 Pat it</button>
+            <div className="row">
+              <button className="btn primary" onClick={() => bridge.current.react({ type: 'quack' })}><HandIcon /> Pat it</button>
               <span className="hint">or click its head</span>
             </div>
-            <Readout lines={[['pat', '{ touch_ms: 412 }']]} />
           </div>
         </section>
 
         <section {...sec(4)}>
           <div className="col glass">
             <p className="kicker">Beak · ElevenLabs voice</p>
-            <h2 className="drift-up">Pick its personality.</h2>
+            <h2>Pick its personality.</h2>
             <p>It talks in its own voice. You choose what it says, and how mean it’s allowed to be.</p>
-            <div className="seg drift-down" role="radiogroup" aria-label="Personality">
+            <div className="seg" role="radiogroup" aria-label="Personality">
               {Object.keys(TONES).map((t) => (
                 <button key={t} role="radio" aria-checked={tone === t} onClick={() => pickTone(t)}>{t[0].toUpperCase() + t.slice(1)}</button>
               ))}
             </div>
-            <p className="quote drift-down">“{TONES[tone]}”</p>
+            <p className="quote">“{TONES[tone]}”</p>
           </div>
         </section>
 
         <section {...sec(5)}>
           <div className="col glass">
             <p className="kicker">Chest · microphone</p>
-            <h2 className="drift-up">Hears what you can’t.</h2>
+            <h2>Hears what you can’t.</h2>
             <p>Headphones on? Doorbell, phone, alarm, someone calling your name: its LED blinks a different pattern for each. Tap one.</p>
-            <div className="leds drift-down">
+            <div className="leds">
               {LEDS.map((l) => (
                 <button key={l.kind} className={`led-tile ${lit === l.kind ? 'lit' : ''}`} onClick={() => blink(l)}>
                   <span className={`led led-${l.kind}`} aria-hidden />
@@ -339,19 +298,18 @@ export default function Landing() {
         <section {...sec(6)}>
           <div className="col glass">
             <p className="kicker">Back · NFC tag + coach</p>
-            <h2 className="drift-up">Tap to lock in.</h2>
+            <h2>Tap to lock in.</h2>
             <p>Tap your phone on its back to start a focus session that blocks your apps. The coach checks in, counts down to deadlines, and calls you out when you zone out.</p>
-            <div className="row drift-down">
-              <button className="btn primary" onClick={() => bridge.current.react({ type: 'focus' })}>🎯 Start focus</button>
+            <div className="row">
+              <button className="btn primary" onClick={() => { bridge.current.react({ type: 'focus' }); bridge.current.react({ type: 'whistle' }); }}><TargetIcon /> Start focus</button>
             </div>
-            <Readout lines={[['coach', '{ kind: "deadline", text: "Lab report is due in 3 hours. Lock in." }'], ['calendar', '{ text: "In 5 minutes: CSE 214." }']]} />
           </div>
         </section>
 
         <section {...sec(7)}>
           <div className="col glass">
             <p className="kicker">Camera · Sign to Duck</p>
-            <h2 className="drift-up">Sign it. It says it.</h2>
+            <h2>Sign it. It says it.</h2>
             <p>ASL word signs, read on the Pi with no cloud API, spoken in the duck’s voice. Some are commands: START FOCUS starts the timer.</p>
             <AslDemo />
           </div>
@@ -360,7 +318,7 @@ export default function Landing() {
         <section {...sec(8)}>
           <div className="col glass">
             <p className="kicker">Memory · the Nest</p>
-            <h2 className="drift-up">“Hey duck, remember…”</h2>
+            <h2>“Hey duck, remember…”</h2>
             <p>Tell it anything. Ask later. It answers out loud, from your own notes only.</p>
             <NestChat duck={bridge} />
           </div>
@@ -368,7 +326,7 @@ export default function Landing() {
 
         <section {...sec(9)}>
           <div className="col">
-            <h2 className="mega drift-up">Adopt your <span className="yellow">duck.</span></h2>
+            <h2 className="mega">Adopt your <span className="yellow">duck.</span></h2>
             <p className="lede">Register, sit down, slouch. Within seconds it says something, and it shows up on your dashboard.</p>
             <div className="row">
               {cta}

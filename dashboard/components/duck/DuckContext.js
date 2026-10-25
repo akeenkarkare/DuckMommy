@@ -13,8 +13,9 @@ import { DEFAULT_SCENE, SCENES } from './scenes';
 //           .duckRect is the duck's on-screen box, kept current by the stage (for the tour)
 //   scene   background id (scenes.js), remembered per browser
 //   setStage(mode|null)  overrides the route's mode (the landing page); reset on every route change
-//   tone    coach personality the duck dresses for (accessories.js): 'gentle' until the dashboard
-//           loads the user's settings.coach_tone; back to 'gentle' on every route change
+//   tone    coach personality the duck dresses for (accessories.js): 'gentle' unless a page says
+//           otherwise; the dashboard and landing set it and put it back to 'gentle' when they unmount
+//           (not reset here on route change: child effects run first, so a reset would undo them)
 const Ctx = createContext(null);
 
 export function DuckProvider({ children }) {
@@ -39,7 +40,7 @@ export function DuckProvider({ children }) {
     try { localStorage.setItem('duck-scene', id); } catch {}
   };
 
-  useEffect(() => { setStage(null); setTone('gentle'); }, [pathname]);
+  useEffect(() => { setStage(null); }, [pathname]);
 
   useEffect(() => {
     if (mode !== 'dashboard') setFocus(null);

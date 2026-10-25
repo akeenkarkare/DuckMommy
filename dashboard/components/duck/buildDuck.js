@@ -133,11 +133,7 @@ export function buildDuck() {
     new THREE.MeshPhysicalMaterial({ color: '#07070a', roughness: 0.05, clearcoat: 1, iridescence: 1, iridescenceIOR: 1.8, emissive: '#ff2a2a', emissiveIntensity: 0 }));
   const lensShine = shine.clone();
   lensShine.position.set(0.035, 0.035, 0.04);
-  // tiny "recording" light next to the lens
-  const recMaterial = new THREE.MeshStandardMaterial({ color: '#2a0505', emissive: '#ff2a2a', emissiveIntensity: 0 });
-  const recLed = new THREE.Mesh(new THREE.SphereGeometry(0.022, 16, 12), recMaterial);
-  recLed.position.set(0.15, 0.1, -0.005);
-  lens.add(bezel, glass, lensShine, recLed);
+  lens.add(bezel, glass, lensShine);
   [bezel, glass].forEach((m) => tag(m, 'camera'));
   neck.add(lens);
   eyes.push(lens);
@@ -154,7 +150,7 @@ export function buildDuck() {
     ripples.push(rip);
   }
 
-  return { group, bob, squash, neck, jaw, eyes, lensMaterial: glass.material, recMaterial, ringMaterial: ring.material, ripples };
+  return { group, bob, squash, neck, jaw, eyes, lensMaterial: glass.material, ringMaterial: ring.material, ripples };
 }
 
 // Soft warm glow on the floor under the duck.
