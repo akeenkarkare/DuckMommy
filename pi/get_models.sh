@@ -12,7 +12,8 @@ curl -fL -o models/yamnet.tflite \
 # "hey duck" wake word (pi/memory): Vosk small English model, ~40 MB
 if [ ! -d models/vosk-small-en ]; then
   curl -fL -o /tmp/vosk-small-en.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-  unzip -q /tmp/vosk-small-en.zip -d models && mv models/vosk-model-small-en-us-0.15 models/vosk-small-en
+  python3 -m zipfile -e /tmp/vosk-small-en.zip models   # no unzip on a stock Pi OS Lite
+  mv models/vosk-model-small-en-us-0.15 models/vosk-small-en
   rm /tmp/vosk-small-en.zip
 fi
 echo "models ready"
