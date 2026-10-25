@@ -377,6 +377,7 @@ async function handleTts(req, res) {
   if (!text) return res.writeHead(400).end();
 
   try {
+    const t0 = Date.now();
     const r = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(ELEVENLABS_VOICE_ID)}/stream?output_format=pcm_${TTS_SAMPLE_RATE}`,
       {
@@ -392,10 +393,10 @@ async function handleTts(req, res) {
     }
     // Stream it through: the duck starts playing on the first chunk instead of after the whole clip.
     res.writeHead(200, { 'content-type': `audio/L16; rate=${TTS_SAMPLE_RATE}; channels=1`, 'x-sample-rate': TTS_SAMPLE_RATE });
-    let bytes = 0;
-    for await (const chunk of r.body) { bytes += chunk.length; res.write(chunk); }
+    let bytes = 0, first = 0;
+    for await (const chunk of r.body) { if (!bytes) first = Date.now() - t0; bytes += chunk.length; res.write(chunk); }
     res.end();
-    log(`tts ${bytes} bytes: "${text.slice(0, 40)}"`);
+    log(`tts ${bytes} bytes, first audio ${first} ms, done ${Date.now() - t0} ms: "${text.slice(0, 40)}"`);
   } catch (e) {
     log('tts error', e.message);
     if (res.headersSent) res.destroy();   // cut off mid-stream: the duck drops the partial clip
@@ -517,6 +518,8 @@ async function handleVoice(req, res) {
   const name = activeName;
   if (!userId) return voiceReply(res, 200, { intent: 'none', heard: '', say: 'Open the dashboard first so I know who you are.' });
 
+  const t0 = Date.now(), timing = {};
+  res.on('finish', () => log(`voice timing: speech-to-text ${timing.stt ?? '-'} ms, understand ${timing.understand ?? '-'} ms, total ${Date.now() - t0} ms (${MEMORY_MODEL})`));
   try {
     let heard;
     if (String(req.headers['content-type'] ?? '').startsWith('application/json')) {
@@ -527,6 +530,7 @@ async function handleVoice(req, res) {
       if (!ELEVENLABS_API_KEY) return res.writeHead(503).end('ElevenLabs not configured');
       heard = await transcribe({ apiKey: ELEVENLABS_API_KEY, wav: body });
     }
+    timing.stt = Date.now() - t0;
     log(`voice heard ${heard.length} chars`);   // not the words: they can be private
     if (!heard) return voiceReply(res, 200, { intent: 'other', heard, say: "Sorry, I didn't catch that." });
 
@@ -535,6 +539,7 @@ async function handleVoice(req, res) {
     voiceFollowUps.delete(userId);
     const transcript = pending && pending.until > now ? `${pending.heard} ... ${heard}` : heard;
     const meant = await understand({ apiKey: ANTHROPIC_API_KEY, model: MEMORY_MODEL, transcript, name, now, tz: MEMORY_TZ });
+    timing.understand = Date.now() - now;
     const askBack = (say) => {   // a question back: remember what was said, listen for the answer
       voiceFollowUps.set(userId, { heard: transcript, until: Date.now() + FOLLOW_UP_MS });
       return voiceReply(res, 200, { intent: 'remind', heard, say, listen: true });

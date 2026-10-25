@@ -142,8 +142,9 @@ class TalkToDuck:
     def _send_worker(self, pcm: bytes):
         listen = False
         try:
+            t0 = time.monotonic()
             reply = self.post(self.voice_url, self.token, to_wav(pcm))
-            log(f'heard "{reply.get("heard", "")}" -> {reply.get("intent")}')
+            log(f'heard "{reply.get("heard", "")}" -> {reply.get("intent")} ({time.monotonic() - t0:.1f} s round trip)')
             if not reply.get("quiet"):   # quiet: the duck answers another way (e.g. the focus coach speaks)
                 self.voice.say(reply.get("say") or "Sorry, I didn't catch that.")
             listen = bool(reply.get("listen"))

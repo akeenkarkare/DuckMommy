@@ -13,7 +13,7 @@ import time
 import numpy as np
 
 RATE = 16000
-END_SILENCE_S = 1.2     # this much quiet after speech = they're done
+END_SILENCE_S = 0.8     # this much quiet after speech = they're done (1.2 felt laggy)
 NO_SPEECH_S = 5.0       # nothing said at all after the wake word: give up and send what we have
 MAX_S = 15.0            # hard cap on one request
 MIN_RMS = 400           # absolute floor for "someone is talking" (16-bit samples)
