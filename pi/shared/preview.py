@@ -31,10 +31,25 @@ def _lan_ip() -> str:
         return "<this-pi's-ip>"
 
 
-def render_jpeg(rgb, lines, points=None, quality: int = 70, max_width: int = 640) -> bytes | None:
-    """Annotated JPEG: status lines top-left, plus the posture skeleton (hip-shoulder-ear) if given."""
+def render_jpeg(rgb, lines, points=None, quality: int = 70, max_width: int = 640,
+                hands=None, rest_y: float | None = None) -> bytes | None:
+    """Annotated JPEG: status lines top-left, plus the posture skeleton (hip-shoulder-ear) if given.
+
+    hands: the Holistic (75, 3) frame from asl/landmarks.py (both hands drawn as dots).
+    rest_y: Sign to Duck's rest line, as a fraction of the frame height.
+    """
     import cv2
     img = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    h, w = img.shape[:2]
+    if rest_y is not None:
+        y = int(rest_y * h)
+        cv2.line(img, (0, y), (w, y), (0, 160, 255), 1)
+        cv2.putText(img, "rest line", (8, y - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 160, 255), 1)
+    if hands is not None:
+        aspect = w / h   # landmarks.py scaled x by width/height
+        for p in hands[33:75]:   # LEFT_HAND..RIGHT_HAND+21
+            if p[0] == p[0]:     # skip NaN (hand not found)
+                cv2.circle(img, (int(p[0] / aspect * w), int(p[1] * h)), 3, (0, 200, 255), -1)
     if points:
         for side in ("left", "right"):
             chain = [points.get(f"{side}_{k}") for k in ("hip", "shoulder", "ear")]
@@ -47,7 +62,6 @@ def render_jpeg(rgb, lines, points=None, quality: int = 70, max_width: int = 640
         y = 28 + i * 26
         cv2.putText(img, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 4)
         cv2.putText(img, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
-    h, w = img.shape[:2]
     if w > max_width:
         img = cv2.resize(img, (max_width, int(h * max_width / w)), interpolation=cv2.INTER_AREA)
     ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, quality])
@@ -67,11 +81,11 @@ class PreviewServer:
         threading.Thread(target=server.serve_forever, daemon=True, name="preview").start()
         print(f"# preview: open http://{_lan_ip()}:{port}/?k={self.key} in a browser", file=sys.stderr, flush=True)
 
-    def push(self, rgb, lines: list[tuple[str, tuple[int, int, int]]], points=None):
-        """lines: (text, BGR colour) drawn top-left."""
+    def push(self, rgb, lines: list[tuple[str, tuple[int, int, int]]], points=None, hands=None, rest_y=None):
+        """lines: (text, BGR colour) drawn top-left. hands/rest_y: see render_jpeg."""
         if not self.viewers:
             return
-        jpg = render_jpeg(rgb, lines, points, quality=70, max_width=10_000)
+        jpg = render_jpeg(rgb, lines, points, quality=70, max_width=10_000, hands=hands, rest_y=rest_y)
         if jpg:
             with self.cond:
                 self.jpg = jpg
