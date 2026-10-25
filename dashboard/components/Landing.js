@@ -187,7 +187,7 @@ export default function Landing() {
     const sec = SECTIONS[active];
     setStage(sec.stage);
     setFocus(sec.focus);
-    dress(sec.id === 'voice' ? toneRef.current : sec.tone);   // a different personality as you scroll
+    dress('gentle');   // the landing duck stays plain (no accessories); the dashboard dresses it for the chosen personality
     if (!sec.react || reacted.current.has(sec.id)) return;
     const id = setTimeout(() => {
       reacted.current.add(sec.id);
@@ -198,7 +198,7 @@ export default function Landing() {
 
   useEffect(() => () => { setStage(null); setFocus(null); dress('gentle'); }, [setStage, setFocus, dress]);
 
-  const pickTone = (t) => { setTone(t); dress(t); bridge.current.react({ type: 'say', value: { text: TONES[t] } }); };
+  const pickTone = (t) => { setTone(t); bridge.current.react({ type: 'say', value: { text: TONES[t] } }); };
   const blink = (l) => { setLit(l.kind); bridge.current.react({ type: 'sound', label: l.label, value: { kind: l.kind } }); };
 
   const activeId = SECTIONS[active].id;
@@ -227,13 +227,12 @@ export default function Landing() {
         <section {...sec(0)}>
           <div className="col">
             <h1 className="mega">Sit up straight <span className="yellow">bestie.</span></h1>
-            <p className="lede">Duck Mommy sits on your desk, watches your posture, reads your ASL signs, guards your stuff while you’re gone, and (lovingly) nags you to lock in.</p>
+            <p className="lede">Programmers talk to rubber ducks. Ours talks back. DuckMommy fixes your posture, reads ASL, remembers for you, tracks deadlines, hears the doorbell, guards your desk, and keeps you focused.</p>
             <div className="row">
               {cta}
               {!loggedIn && <Link className="text-link" href="/login">I already have one · Log in</Link>}
             </div>
           </div>
-          <button className="scroll-cue" onClick={() => goTo('overview')} aria-label="Scroll to meet the duck"><span aria-hidden>↓</span></button>
         </section>
 
         <section {...sec(1)}>
